@@ -134,6 +134,20 @@
 
   .btn-row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; }
 
+  .player-count-btn {
+    background: #111;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted);
+    font-family: 'DM Mono', monospace;
+    font-size: 1rem;
+    width: 44px; height: 44px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .player-count-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .player-count-btn.active { border-color: var(--accent); color: var(--accent); background: #1e1a12; }
+
   /* ── Divider ── */
   .divider {
     display: flex;
@@ -453,6 +467,13 @@
       <h2>Spielen</h2>
       <label for="player-name">Dein Name</label>
       <input type="text" id="player-name" placeholder="Name eingeben" maxlength="20">
+      <label for="max-players">Spieleranzahl</label>
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.25rem;">
+        <button class="player-count-btn active" data-count="2" onclick="selectCount(this)">2</button>
+        <button class="player-count-btn" data-count="3" onclick="selectCount(this)">3</button>
+        <button class="player-count-btn" data-count="4" onclick="selectCount(this)">4</button>
+        <button class="player-count-btn" data-count="5" onclick="selectCount(this)">5</button>
+      </div>
       <div id="home-error" class="error-msg"></div>
       <div class="btn-row">
         <button class="btn" onclick="createLobby()">Spiel erstellen</button>
@@ -538,6 +559,13 @@
   let myEntityID = null;
   let isHost = false;
   let pollInterval = null;
+  let selectedCount = 2;
+
+  function selectCount(btn) {
+    document.querySelectorAll('.player-count-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedCount = parseInt(btn.dataset.count);
+  }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   function show(id) {
@@ -568,7 +596,7 @@
   async function createLobby() {
     const name = document.getElementById('player-name').value.trim();
     if (!name) { document.getElementById('home-error').textContent = 'Bitte einen Namen eingeben.'; return; }
-    const data = await api('/api/lobby/create', 'POST', { name });
+    const data = await api('/api/lobby/create', 'POST', { name, max_players: selectedCount });
     if (data.error) { document.getElementById('home-error').textContent = data.error; return; }
     gameId = data.game_id;
     playerId = data.player_id;
