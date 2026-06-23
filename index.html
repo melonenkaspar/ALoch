@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arschloch</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg:       #0f0f0f;
+    --surface:  #1a1a1a;
+    --border:   #2a2a2a;
+    --accent:   #c8a84b;
+    --accent2:  #e8c87a;
+    --text:     #e8e0d0;
+    --muted:    #666;
+    --red:      #c0392b;
+    --green:    #27ae60;
+    --blue:     #2980b9;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  header {
+    width: 100%;
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+  }
+
+  header h1 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.2rem;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+  }
+
+  header span {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+  }
+
+  main {
+    width: 100%;
+    max-width: 900px;
+    padding: 2rem 1.5rem;
+    flex: 1;
+  }
+
+  /* ── Screens ── */
+  .screen { display: none; }
+  .screen.active { display: block; }
+
+  /* ── Cards (UI) ── */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+  }
+
+  .card h2 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.4rem;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+    margin-bottom: 1.2rem;
+  }
+
+  /* ── Form ── */
+  label {
+    display: block;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 0.4rem;
+    margin-top: 1rem;
+  }
+
+  input[type=text] {
+    width: 100%;
+    background: #111;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 1rem;
+    padding: 0.6rem 0.8rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  input[type=text]:focus { border-color: var(--accent); }
+
+  .btn {
+    display: inline-block;
+    background: var(--accent);
+    color: #111;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    padding: 0.65rem 1.4rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-top: 1rem;
+  }
+
+  .btn:hover { background: var(--accent2); }
+  .btn.secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .btn.secondary:hover { border-color: var(--accent); color: var(--accent); }
+
+  .btn-row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; }
+
+  /* ── Divider ── */
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 1.5rem 0;
+    color: var(--muted);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .divider::before, .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── Error ── */
+  .error-msg {
+    color: var(--red);
+    font-size: 0.82rem;
+    margin-top: 0.5rem;
+    min-height: 1.2rem;
+  }
+
+  /* ── Lobby ── */
+  #lobby-code {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 3rem;
+    letter-spacing: 0.2em;
+    color: var(--accent);
+    text-align: center;
+    padding: 1rem 0;
+  }
+
+  .lobby-code-label {
+    text-align: center;
+    font-size: 0.72rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 0.3rem;
+  }
+
+  .player-list {
+    list-style: none;
+    margin-top: 1rem;
+  }
+
+  .player-list li {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+  }
+
+  .player-list li:last-child { border-bottom: none; }
+
+  .pip {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    flex-shrink: 0;
+  }
+
+  .slot-empty .pip { background: var(--border); }
+  .slot-empty { color: var(--muted); }
+
+  #lobby-status {
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-align: center;
+    margin-top: 0.75rem;
+  }
+
+  /* ── Game Table ── */
+  #game-screen { display: none; }
+  #game-screen.active { display: grid; grid-template-columns: 1fr 280px; gap: 1.5rem; }
+
+  .game-main { display: flex; flex-direction: column; gap: 1rem; }
+
+  /* Opponents */
+  #opponents {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+
+  .opponent-chip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem 0.8rem;
+    font-size: 0.8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 90px;
+  }
+
+  .opponent-chip .oname { font-weight: 600; }
+  .opponent-chip .orank { font-size: 0.68rem; color: var(--accent); font-family: 'DM Mono', monospace; }
+  .opponent-chip .ocards { font-size: 0.7rem; color: var(--muted); }
+  .opponent-chip.active-player { border-color: var(--accent); }
+
+  /* Pile */
+  #pile-area {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem;
+    min-height: 120px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+
+  #pile-label {
+    font-size: 0.7rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  #pile-cards {
+    display: flex;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .card-chip {
+    background: #fff;
+    color: #111;
+    border-radius: 5px;
+    padding: 0.3rem 0.5rem;
+    font-family: 'DM Mono', monospace;
+    font-size: 0.85rem;
+    font-weight: 500;
+    min-width: 36px;
+    text-align: center;
+  }
+
+  .card-chip.red { color: var(--red); }
+  .card-chip.black { color: #111; }
+
+  #turn-banner {
+    text-align: center;
+    font-size: 0.82rem;
+    color: var(--muted);
+  }
+
+  #turn-banner span { color: var(--accent); font-weight: 600; }
+
+  /* Hand */
+  #hand-area {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem;
+  }
+
+  #hand-area h3 {
+    font-size: 0.72rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.8rem;
+  }
+
+  #hand-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  /* Move buttons */
+  #moves-area {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.2rem;
+  }
+
+  #moves-area h3 {
+    font-size: 0.72rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.8rem;
+  }
+
+  #move-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .move-btn {
+    background: #111;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .move-btn:hover { border-color: var(--accent); background: #1e1a12; color: var(--accent); }
+  .move-btn.pass-btn { border-color: var(--muted); color: var(--muted); }
+  .move-btn.pass-btn:hover { border-color: var(--red); color: var(--red); background: #1a1010; }
+
+  #waiting-msg {
+    color: var(--muted);
+    font-size: 0.85rem;
+    font-style: italic;
+  }
+
+  /* Sidebar */
+  .game-sidebar { display: flex; flex-direction: column; gap: 1rem; }
+
+  #log-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    flex: 1;
+  }
+
+  #log-box h3 {
+    font-size: 0.72rem;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 0.6rem;
+  }
+
+  #log-entries {
+    font-family: 'DM Mono', monospace;
+    font-size: 0.75rem;
+    line-height: 1.7;
+    color: var(--muted);
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  #log-entries p { border-bottom: 1px solid #1e1e1e; padding: 0.15rem 0; }
+  #log-entries p:last-child { color: var(--text); }
+
+  /* Finished */
+  #finished-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #finished-overlay.active { display: flex; }
+
+  #finished-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2.5rem;
+    max-width: 420px;
+    width: 90%;
+    text-align: center;
+  }
+
+  #finished-box h2 {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2rem;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+    margin-bottom: 1.2rem;
+  }
+
+  .rank-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+  }
+
+  .rank-row:last-child { border-bottom: none; }
+  .rank-label { font-family: 'DM Mono', monospace; color: var(--accent); font-size: 0.8rem; }
+
+  @media (max-width: 640px) {
+    #game-screen.active { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Arschloch</h1>
+  <span>Kartenspiel</span>
+</header>
+
+<main>
+
+  <!-- ── Home Screen ── -->
+  <div id="home-screen" class="screen active">
+    <div class="card" style="max-width:420px; margin:0 auto;">
+      <h2>Spielen</h2>
+      <label for="player-name">Dein Name</label>
+      <input type="text" id="player-name" placeholder="Name eingeben" maxlength="20">
+      <div id="home-error" class="error-msg"></div>
+      <div class="btn-row">
+        <button class="btn" onclick="createLobby()">Spiel erstellen</button>
+        <button class="btn secondary" onclick="showJoin()">Beitreten</button>
+      </div>
+
+      <div id="join-section" style="display:none;">
+        <div class="divider">Raum-Code</div>
+        <label for="join-code">Code eingeben</label>
+        <input type="text" id="join-code" placeholder="ABC123" maxlength="6" style="text-transform:uppercase; letter-spacing:0.15em;">
+        <div class="btn-row">
+          <button class="btn" onclick="joinLobby()">Beitreten</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Lobby Screen ── -->
+  <div id="lobby-screen" class="screen">
+    <div class="card" style="max-width:480px; margin:0 auto;">
+      <div class="lobby-code-label">Raum-Code</div>
+      <div id="lobby-code">––––––</div>
+      <p style="text-align:center; font-size:0.8rem; color:var(--muted); margin-bottom:1.5rem;">
+        Teile diesen Code mit den anderen Spielern
+      </p>
+
+      <h2>Spieler</h2>
+      <ul class="player-list" id="player-list"></ul>
+      <div id="lobby-status"></div>
+
+      <div class="btn-row">
+        <button class="btn" id="start-btn" onclick="startGame()" style="display:none;">Spiel starten</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Game Screen ── -->
+  <div id="game-screen" class="screen">
+    <div class="game-main">
+
+      <div id="opponents"></div>
+
+      <div id="pile-area">
+        <div id="pile-label">Stapel</div>
+        <div id="pile-cards"><span style="color:var(--muted); font-size:0.82rem;">Leer</span></div>
+        <div id="turn-banner"></div>
+      </div>
+
+      <div id="hand-area">
+        <h3>Deine Hand</h3>
+        <div id="hand-cards"></div>
+      </div>
+
+      <div id="moves-area">
+        <h3>Mögliche Züge</h3>
+        <div id="move-buttons"></div>
+      </div>
+
+    </div>
+
+    <div class="game-sidebar">
+      <div id="log-box">
+        <h3>Spielverlauf</h3>
+        <div id="log-entries"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── Finished Overlay ── -->
+<div id="finished-overlay">
+  <div id="finished-box">
+    <h2>Spiel beendet</h2>
+    <div id="finished-ranks"></div>
+    <button class="btn" style="margin-top:1.5rem;" onclick="location.reload()">Neues Spiel</button>
+  </div>
+</div>
+
+<script>
+  let gameId = null;
+  let playerId = null;
+  let myEntityID = null;
+  let isHost = false;
+  let pollInterval = null;
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  function show(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  function suitColor(card) {
+    return (card.includes('♥') || card.includes('♦')) ? 'red' : 'black';
+  }
+
+  function cardHTML(card) {
+    return `<span class="card-chip ${suitColor(card)}">${card}</span>`;
+  }
+
+  async function api(path, method = 'GET', body = null) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(path, opts);
+    return res.json();
+  }
+
+  // ── Home ─────────────────────────────────────────────────────────────────────
+  function showJoin() {
+    document.getElementById('join-section').style.display = 'block';
+  }
+
+  async function createLobby() {
+    const name = document.getElementById('player-name').value.trim();
+    if (!name) { document.getElementById('home-error').textContent = 'Bitte einen Namen eingeben.'; return; }
+    const data = await api('/api/lobby/create', 'POST', { name });
+    if (data.error) { document.getElementById('home-error').textContent = data.error; return; }
+    gameId = data.game_id;
+    playerId = data.player_id;
+    isHost = true;
+    enterLobby();
+  }
+
+  async function joinLobby() {
+    const name = document.getElementById('player-name').value.trim();
+    const code = document.getElementById('join-code').value.trim().toUpperCase();
+    if (!name) { document.getElementById('home-error').textContent = 'Bitte einen Namen eingeben.'; return; }
+    if (!code) { document.getElementById('home-error').textContent = 'Bitte einen Code eingeben.'; return; }
+    const data = await api('/api/lobby/join', 'POST', { name, game_id: code });
+    if (data.error) { document.getElementById('home-error').textContent = data.error; return; }
+    gameId = data.game_id;
+    playerId = data.player_id;
+    isHost = false;
+    enterLobby();
+  }
+
+  // ── Lobby ─────────────────────────────────────────────────────────────────────
+  function enterLobby() {
+    document.getElementById('lobby-code').textContent = gameId;
+    show('lobby-screen');
+    if (isHost) document.getElementById('start-btn').style.display = 'inline-block';
+    pollInterval = setInterval(pollLobby, 2000);
+    pollLobby();
+  }
+
+  async function pollLobby() {
+    const data = await api(`/api/lobby/${gameId}`);
+    if (data.status === 'playing') {
+      clearInterval(pollInterval);
+      enterGame();
+      return;
+    }
+    const list = document.getElementById('player-list');
+    list.innerHTML = '';
+    for (let i = 0; i < data.max_players; i++) {
+      const p = data.players[i];
+      const li = document.createElement('li');
+      if (p) {
+        li.innerHTML = `<span class="pip"></span>${p.name}${i === 0 ? ' <span style="color:var(--muted);font-size:0.7rem;">(Host)</span>' : ''}`;
+      } else {
+        li.classList.add('slot-empty');
+        li.innerHTML = `<span class="pip"></span>Wartet auf Spieler…`;
+      }
+      list.appendChild(li);
+    }
+    document.getElementById('lobby-status').textContent =
+      `${data.players.length} / ${data.max_players} Spieler bereit`;
+  }
+
+  async function startGame() {
+    const data = await api(`/api/lobby/${gameId}/start`, 'POST', { player_id: playerId });
+    if (data.error) { alert(data.error); return; }
+    clearInterval(pollInterval);
+    enterGame();
+  }
+
+  // ── Game ──────────────────────────────────────────────────────────────────────
+  function enterGame() {
+    show('game-screen');
+    pollInterval = setInterval(pollGame, 2000);
+    pollGame();
+  }
+
+  async function pollGame() {
+    const data = await api(`/api/game/${gameId}/state?player_id=${playerId}`);
+    if (!data || data.error) return;
+    myEntityID = data.myEntityID;
+    renderGame(data);
+    if (data.finished) {
+      clearInterval(pollInterval);
+      showFinished(data.players);
+    }
+  }
+
+  function renderGame(data) {
+    // Opponents
+    const oppDiv = document.getElementById('opponents');
+    oppDiv.innerHTML = '';
+    data.players.forEach(p => {
+      if (p.entityID === myEntityID) return;
+      const chip = document.createElement('div');
+      chip.className = 'opponent-chip' + (p.entityID === data.currentTurn ? ' active-player' : '');
+      chip.innerHTML = `
+        <span class="oname">${p.name}</span>
+        <span class="ocards">🃏 ${p.cardCount} Karten</span>
+        ${p.rank ? `<span class="orank">${p.rank}</span>` : ''}
+      `;
+      oppDiv.appendChild(chip);
+    });
+
+    // Pile
+    const pileCards = document.getElementById('pile-cards');
+    if (data.stack && data.stack.length > 0) {
+      pileCards.innerHTML = data.stack.map(cardHTML).join('');
+    } else {
+      pileCards.innerHTML = '<span style="color:var(--muted); font-size:0.82rem;">Leer</span>';
+    }
+
+    // Turn banner
+    const banner = document.getElementById('turn-banner');
+    if (data.currentTurn === myEntityID) {
+      banner.innerHTML = '<span>Du bist dran!</span>';
+    } else {
+      const curName = data.players.find(p => p.entityID === data.currentTurn)?.name || '?';
+      banner.innerHTML = `Zug von <span>${curName}</span>`;
+    }
+
+    // My hand
+    const me = data.players.find(p => p.entityID === myEntityID);
+    const handDiv = document.getElementById('hand-cards');
+    handDiv.innerHTML = me && me.hand.length > 0
+      ? me.hand.map(cardHTML).join('')
+      : '<span style="color:var(--muted); font-size:0.82rem;">Keine Karten mehr</span>';
+
+    // Moves
+    const movesDiv = document.getElementById('move-buttons');
+    movesDiv.innerHTML = '';
+    if (data.currentTurn === myEntityID && data.myMoves && data.myMoves.length > 0) {
+      data.myMoves.forEach(move => {
+        const btn = document.createElement('button');
+        btn.className = 'move-btn' + (move === 'pass' ? ' pass-btn' : '');
+        btn.textContent = move === 'pass' ? 'Passen' : move;
+        btn.onclick = () => makeMove(move);
+        movesDiv.appendChild(btn);
+      });
+    } else if (data.currentTurn !== myEntityID) {
+      movesDiv.innerHTML = '<span id="waiting-msg">Warte auf anderen Spieler…</span>';
+    } else {
+      movesDiv.innerHTML = '<span id="waiting-msg">Keine Züge möglich – warte auf nächste Runde.</span>';
+    }
+
+    // Log
+    const logDiv = document.getElementById('log-entries');
+    logDiv.innerHTML = data.log.map(l => `<p>${l}</p>`).join('');
+    logDiv.scrollTop = logDiv.scrollHeight;
+  }
+
+  async function makeMove(move) {
+    const data = await api(`/api/game/${gameId}/move`, 'POST', { player_id: playerId, move });
+    if (data.error) { alert(data.error); return; }
+    await pollGame();
+  }
+
+  function showFinished(players) {
+    const ranked = players.filter(p => p.rank).sort((a, b) => {
+      const order = ["President", "Vice-President", "Citizen", "Vice-Brokie", "Brokie"];
+      return order.indexOf(a.rank) - order.indexOf(b.rank);
+    });
+    const box = document.getElementById('finished-ranks');
+    box.innerHTML = ranked.map(p => `
+      <div class="rank-row">
+        <span>${p.name}</span>
+        <span class="rank-label">${p.rank}</span>
+      </div>
+    `).join('');
+    document.getElementById('finished-overlay').classList.add('active');
+  }
+</script>
+</body>
+</html>
