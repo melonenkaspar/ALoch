@@ -1,21 +1,20 @@
 import copy
 import random
-from flask import Flask, jsonify, request, render_template, session
+from flask import Flask, jsonify, request, render_template
 from flask_cors import CORS
 import uuid
+import os
 
 app = Flask(__name__)
-app.secret_key = 'Enten'
+app.secret_key = 'arschloch-secret-key-2024'
 CORS(app)
 
-# ─── Config (from SimulatorConfig) ────────────────────────────────────────────
-gameEntities = 5
+# ─── Config ───────────────────────────────────────────────────────────────────
 enablePass = True
-rankOrder = ["2","3","4","5","6","7","8","9","T","J","Q","K","A"]
 deckSize = 'full'
 gameRanks = ["President", "Vice-President", "Citizen", "Vice-Brokie", "Brokie"]
 
-# ─── Card Engine (from SimulatorFunctions) ────────────────────────────────────
+# ─── Card Engine ──────────────────────────────────────────────────────────────
 _RANK_TO_BASE = {"2": 0, "3": 4, "4": 8, "5": 12, "6": 16, "7": 20,
                  "8": 24, "9": 28, "T": 32, "J": 36, "Q": 40, "K": 44, "A": 48}
 _BASE_TO_RANK = {v: k for k, v in _RANK_TO_BASE.items()}
@@ -30,11 +29,8 @@ def createDeck():
 def createEntities(names):
     return [{"rank": None, "hand": [], "entityID": i, "name": names[i]} for i in range(len(names))]
 
-def shuffleDeck(deck):
-    random.shuffle(deck)
-
+def shuffleDeck(deck): random.shuffle(deck)
 def getRank(card): return card[0]
-def getSuit(card): return card[1]
 def getMoveSize(move): return move[2]
 
 def dealHands(deck, players, citizenStack):
@@ -87,11 +83,60 @@ def possibleMoves(players, entity, activePlay):
         finalMoves.append('pass')
     return finalMoves
 
-# ─── Game State Store ──────────────────────────────────────────────────────────
-# { game_id: { ...game state... } }
+def only_pass_available(players, entity, activePlay):
+    """Returns True if the only legal move is 'pass'."""
+    moves = possibleMoves(players, entity, activePlay)
+    return moves == ['pass']
+
+def advance_turn(s, g):
+    """Advance turn, auto-passing players who have no other option. Returns when a real decision is needed."""
+    trickOrder = s['trickOrder']
+    remainingRanks = s['remainingRanks']
+
+    for _ in range(len(trickOrder) * 2):  # safety limit
+        current = s['currentTurn']
+
+        # Skip players who are already finished
+        if s['players'][current]['rank'] is not None:
+            idx = trickOrder.index(current) if current in trickOrder else 0
+            s['currentTurn'] = trickOrder[(idx + 1) % len(trickOrder)]
+            continue
+
+        # Auto-pass if no real moves available
+        if only_pass_available(s['players'], current, s['mostRecentMove']):
+            player_name = s['players'][current]['name']
+            s['log'].append(f'{player_name} passt automatisch.')
+            s['passedCounter'] += 1
+
+            # Check if round should reset
+            active_count = len([e for e in trickOrder if s['players'][e]['rank'] is None])
+            if s['passedCounter'] >= active_count:
+                s['log'].append('Alle gepasst – neue Runde.')
+                s['passedCounter'] = 0
+                for card in s['stack']:
+                    s['discardStack'].append(card)
+                s['mostRecentMove'] = None
+                s['stack'].clear()
+                # Restart from current player
+                cur_idx = trickOrder.index(current) if current in trickOrder else 0
+                new_order = [trickOrder[(cur_idx + i) % len(trickOrder)] for i in range(len(trickOrder))]
+                s['trickOrder'] = new_order
+                s['nextTrickOrder'] = copy.deepcopy(new_order)
+                s['currentTurn'] = new_order[0]
+                continue
+
+            # Advance to next
+            idx = trickOrder.index(current) if current in trickOrder else 0
+            s['currentTurn'] = trickOrder[(idx + 1) % len(trickOrder)]
+            continue
+
+        # This player has real choices – stop here
+        break
+
+# ─── Game State Store ─────────────────────────────────────────────────────────
 games = {}
 
-# ─── Lobby ─────────────────────────────────────────────────────────────────────
+# ─── Routes ───────────────────────────────────────────────────────────────────
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -100,12 +145,14 @@ def index():
 def create_lobby():
     data = request.json
     player_name = data.get('name', 'Player').strip()[:20]
+    max_players = int(data.get('max_players', 5))
+    max_players = max(2, min(5, max_players))  # clamp 2–5
     game_id = str(uuid.uuid4())[:6].upper()
 
     games[game_id] = {
-        'status': 'lobby',       # lobby | playing | finished
+        'status': 'lobby',
         'players': [{'id': str(uuid.uuid4()), 'name': player_name, 'entityID': 0}],
-        'max_players': gameEntities,
+        'max_players': max_players,
         'state': None
     }
     host_id = games[game_id]['players'][0]['id']
@@ -154,7 +201,6 @@ def start_game(game_id):
     if len(g['players']) < 2:
         return jsonify({'error': 'Mindestens 2 Spieler benötigt'}), 400
 
-    # Init game state
     names = [p['name'] for p in g['players']]
     actual_count = len(names)
 
@@ -165,7 +211,6 @@ def start_game(game_id):
 
     trickOrder = list(range(actual_count))
     random.shuffle(trickOrder)
-
     remainingRanks = gameRanks[:actual_count]
 
     g['status'] = 'playing'
@@ -179,13 +224,16 @@ def start_game(game_id):
         'mostRecentMove': None,
         'passedCounter': 0,
         'remainingRanks': remainingRanks,
-        'currentTurn': trickOrder[0],   # entityID whose turn it is
+        'currentTurn': trickOrder[0],
         'log': ['Spiel gestartet!'],
         'finished': False
     }
+
+    # Auto-pass from the start if first player has no real moves
+    advance_turn(g['state'], g)
+
     return jsonify({'ok': True})
 
-# ─── Game Actions ───────────────────────────────────────────────────────────────
 @app.route('/api/game/<game_id>/state', methods=['GET'])
 def get_state(game_id):
     player_id = request.args.get('player_id')
@@ -200,7 +248,6 @@ def get_state(game_id):
 
     s = g['state']
 
-    # Build per-player view (hide other players' cards)
     players_view = []
     for p in s['players']:
         players_view.append({
@@ -250,9 +297,7 @@ def make_move(game_id):
         return jsonify({'error': 'Ungültiger Zug'}), 400
 
     trickOrder = s['trickOrder']
-    nextTrickOrder = s['nextTrickOrder']
     remainingRanks = s['remainingRanks']
-
     player_name = s['players'][entity_id]['name']
 
     if move == 'pass':
@@ -267,7 +312,6 @@ def make_move(game_id):
         # Check if player finished their hand
         if not s['players'][entity_id]['hand']:
             if remainingRanks:
-                # Assign rank
                 if getRank(move) == 'A':
                     s['players'][entity_id]['rank'] = remainingRanks[-1]
                     del remainingRanks[-1]
@@ -283,29 +327,22 @@ def make_move(game_id):
                         del remainingRanks[0]
                         s['log'].append(f'{s["players"][last]["name"]} ist letzter → {s["players"][last]["rank"]}!')
 
-                # Remove finished player from orders
                 if entity_id in trickOrder: trickOrder.remove(entity_id)
-                if entity_id in nextTrickOrder: nextTrickOrder.remove(entity_id)
+                if entity_id in s['nextTrickOrder']: s['nextTrickOrder'].remove(entity_id)
 
-                # Check game end
                 if not remainingRanks or len(trickOrder) <= 1:
                     s['finished'] = True
                     s['log'].append('🎉 Spiel beendet!')
                     g['status'] = 'finished'
                     return jsonify({'ok': True})
 
-                # Next player after the one who just finished
                 if trickOrder:
-                    idx = trickOrder.index(entity_id) if entity_id in trickOrder else 0
-                    next_player = trickOrder[idx % len(trickOrder)]
-                    nextTrickOrder = [next_player]
-                    for i in range(len(trickOrder) - 1):
-                        nextTrickOrder.append(trickOrder[(trickOrder.index(next_player) + i + 1) % len(trickOrder)])
-                    s['nextTrickOrder'] = nextTrickOrder
+                    next_player = trickOrder[0]
                     s['currentTurn'] = next_player
+                    advance_turn(s, g)
                     return jsonify({'ok': True})
 
-    # Round reset if all remaining players passed
+    # Round reset check
     active_count = len([e for e in trickOrder if s['players'][e]['rank'] is None])
     if s['passedCounter'] >= active_count:
         s['log'].append('Alle gepasst – neue Runde.')
@@ -314,26 +351,22 @@ def make_move(game_id):
             s['discardStack'].append(card)
         s['mostRecentMove'] = None
         s['stack'].clear()
-
-        # New trickOrder starting from current player
         cur_idx = trickOrder.index(entity_id) if entity_id in trickOrder else 0
-        new_order = []
-        for i in range(len(trickOrder)):
-            new_order.append(trickOrder[(cur_idx + i) % len(trickOrder)])
+        new_order = [trickOrder[(cur_idx + i) % len(trickOrder)] for i in range(len(trickOrder))]
         s['trickOrder'] = new_order
         s['nextTrickOrder'] = copy.deepcopy(new_order)
         s['currentTurn'] = new_order[0]
+        advance_turn(s, g)
         return jsonify({'ok': True})
 
-    # Advance to next player in trick order
+    # Advance to next player
     if entity_id in trickOrder:
         cur_idx = trickOrder.index(entity_id)
-        next_player = trickOrder[(cur_idx + 1) % len(trickOrder)]
-        s['currentTurn'] = next_player
-    
+        s['currentTurn'] = trickOrder[(cur_idx + 1) % len(trickOrder)]
+
+    advance_turn(s, g)
     return jsonify({'ok': True})
 
 if __name__ == '__main__':
-    import os
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
