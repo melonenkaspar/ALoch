@@ -64,9 +64,9 @@ gameEntities = 5    #count of players (2-inf, default 5)
 
 #2    Behavior control
 #2-1 moves
-behaviorTypeMoves = 'random'
+behaviorTypeMoves = 'player'
 #2-2 trading
-behaviorTypeTrading = 'random'
+behaviorTypeTrading = 'player'
 
 #Decides whether the possibleMoves() list should include a native 'Pass'
 enablePass = True
