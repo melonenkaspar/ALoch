@@ -148,6 +148,19 @@
   .player-count-btn:hover { border-color: var(--accent); color: var(--accent); }
   .player-count-btn.active { border-color: var(--accent); color: var(--accent); background: #1e1a12; }
 
+  .sort-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--muted);
+    font-size: 0.75rem;
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+    font-family: 'DM Mono', monospace;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .sort-btn:hover { border-color: var(--accent); color: var(--accent); }
+
   /* ── Divider ── */
   .divider {
     display: flex;
@@ -467,12 +480,17 @@
       <h2>Spielen</h2>
       <label for="player-name">Dein Name</label>
       <input type="text" id="player-name" placeholder="Name eingeben" maxlength="20">
-      <label for="max-players">Spieleranzahl</label>
+      <label>Spieleranzahl</label>
       <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.25rem;">
         <button class="player-count-btn active" data-count="2" onclick="selectCount(this)">2</button>
         <button class="player-count-btn" data-count="3" onclick="selectCount(this)">3</button>
         <button class="player-count-btn" data-count="4" onclick="selectCount(this)">4</button>
         <button class="player-count-btn" data-count="5" onclick="selectCount(this)">5</button>
+      </div>
+      <label>Deck-Größe</label>
+      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.25rem;">
+        <button class="player-count-btn active" data-deck="full" onclick="selectDeck(this)">Voll <span style="font-size:0.65rem; color:var(--muted);">2–A</span></button>
+        <button class="player-count-btn" data-deck="half" onclick="selectDeck(this)">Halb <span style="font-size:0.65rem; color:var(--muted);">7–A</span></button>
       </div>
       <div id="home-error" class="error-msg"></div>
       <div class="btn-row">
@@ -500,6 +518,7 @@
         Teile diesen Code mit den anderen Spielern
       </p>
 
+      <div id="lobby-settings" style="font-size:0.78rem; color:var(--muted); text-align:center; margin-bottom:1rem; font-family:'DM Mono',monospace;"></div>
       <h2>Spieler</h2>
       <ul class="player-list" id="player-list"></ul>
       <div id="lobby-status"></div>
@@ -523,7 +542,10 @@
       </div>
 
       <div id="hand-area">
-        <h3>Deine Hand</h3>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.8rem;">
+          <h3 style="margin:0;">Deine Hand</h3>
+          <button class="sort-btn" id="sort-toggle" onclick="toggleSort()" title="Sortierung umschalten">⇅ <span id="sort-label">sortiert</span></button>
+        </div>
         <div id="hand-cards"></div>
       </div>
 
@@ -560,11 +582,43 @@
   let isHost = false;
   let pollInterval = null;
   let selectedCount = 2;
+  let selectedDeck = 'full';
+  let sortEnabled = true;
+  let lastHand = [];
 
   function selectCount(btn) {
-    document.querySelectorAll('.player-count-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('[data-count]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     selectedCount = parseInt(btn.dataset.count);
+  }
+
+  function selectDeck(btn) {
+    document.querySelectorAll('[data-deck]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    selectedDeck = btn.dataset.deck;
+  }
+
+  function toggleSort() {
+    sortEnabled = !sortEnabled;
+    document.getElementById('sort-label').textContent = sortEnabled ? 'sortiert' : 'original';
+    renderHand(lastHand);
+  }
+
+  function renderHand(hand) {
+    lastHand = hand;
+    const handDiv = document.getElementById('hand-cards');
+    if (!hand || hand.length === 0) {
+      handDiv.innerHTML = '<span style="color:var(--muted); font-size:0.82rem;">Keine Karten mehr</span>';
+      return;
+    }
+    const display = sortEnabled ? [...hand].sort((a, b) => cardSortValue(a) - cardSortValue(b)) : hand;
+    handDiv.innerHTML = display.map(cardHTML).join('');
+  }
+
+  function cardSortValue(card) {
+    const rankOrder = {"2":0,"3":4,"4":8,"5":12,"6":16,"7":20,"8":24,"9":28,"T":32,"J":36,"Q":40,"K":44,"A":48};
+    const suitOrder = {"♣":0,"♦":1,"♥":2,"♠":3};
+    return (rankOrder[card[0]] ?? 0) + (suitOrder[card[1]] ?? 0);
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -596,7 +650,7 @@
   async function createLobby() {
     const name = document.getElementById('player-name').value.trim();
     if (!name) { document.getElementById('home-error').textContent = 'Bitte einen Namen eingeben.'; return; }
-    const data = await api('/api/lobby/create', 'POST', { name, max_players: selectedCount });
+    const data = await api('/api/lobby/create', 'POST', { name, max_players: selectedCount, deck_size: selectedDeck });
     if (data.error) { document.getElementById('home-error').textContent = data.error; return; }
     gameId = data.game_id;
     playerId = data.player_id;
@@ -633,6 +687,9 @@
       enterGame();
       return;
     }
+    const deckLabel = data.deck_size === 'half' ? 'Halb-Deck (7–A)' : 'Volles Deck (2–A)';
+    document.getElementById('lobby-settings').textContent =
+      `${data.max_players} Spieler · ${deckLabel}`;
     const list = document.getElementById('player-list');
     list.innerHTML = '';
     for (let i = 0; i < data.max_players; i++) {
@@ -710,10 +767,7 @@
 
     // My hand
     const me = data.players.find(p => p.entityID === myEntityID);
-    const handDiv = document.getElementById('hand-cards');
-    handDiv.innerHTML = me && me.hand.length > 0
-      ? me.hand.map(cardHTML).join('')
-      : '<span style="color:var(--muted); font-size:0.82rem;">Keine Karten mehr</span>';
+    renderHand(me ? me.hand : []);
 
     // Moves
     const movesDiv = document.getElementById('move-buttons');
