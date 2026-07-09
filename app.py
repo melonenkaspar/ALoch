@@ -1,7 +1,7 @@
 # ─── app.py ───────────────────────────────────────────────────────────────────
 import copy, os, uuid, random, json
 from datetime import datetime, timezone
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template_string
 from flask_cors import CORS
 
 from SimulatorConfig import gameRanks, LOG_PASSWORD, LOG_FILE
@@ -105,7 +105,10 @@ def _init_round(g, round_number):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates', 'index.html')
+    with open(html_path, 'r', encoding='utf-8') as f:
+        html = f.read()
+    return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
 
 # ── Routes: lobby ─────────────────────────────────────────────────────────────
 
