@@ -279,6 +279,7 @@ def get_state(game_id):
         'myTrade':        my_trade,
         'log':            s['log'][-12:],
         'finished':       s['finished'],
+        'lastBotMove':    s.get('lastBotMove'),
     })
 
 # ── Routes: game move ─────────────────────────────────────────────────────────
