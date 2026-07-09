@@ -54,6 +54,7 @@ input[type=text]:focus{border-color:var(--accent)}
 .cc.red{color:var(--red)}
 #turn-banner{font-size:.8rem;color:var(--muted);text-align:center}
 #turn-banner span{color:var(--accent);font-weight:600}
+#bot-move-banner{background:#1a1a12;border:1px solid var(--accent);border-radius:6px;padding:.5rem .8rem;font-family:'DM Mono',monospace;font-size:.8rem;color:var(--accent);display:none;text-align:center;margin-top:.3rem}
 #hand-area{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem}
 .hand-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.7rem}
 .hand-header h3{font-size:.7rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin:0}
@@ -158,6 +159,7 @@ input[type=text]:focus{border-color:var(--accent)}
       <div id="pile-label">Stapel</div>
       <div id="pile-cards"><span style="color:var(--muted);font-size:.8rem">Leer</span></div>
       <div id="turn-banner"></div>
+      <div id="bot-move-banner"></div>
     </div>
     <div id="hand-area">
       <div class="hand-header">
@@ -377,6 +379,15 @@ function renderGame(d){
         mb.appendChild(b);
       });
     } else {mb.innerHTML='<span id="wait-msg">Warte auf anderen Spieler…</span>';}
+  }
+  // Bot move banner
+  const bmb=document.getElementById('bot-move-banner');
+  if(d.lastBotMove&&d.status==='playing'){
+    const bm=d.lastBotMove;
+    bmb.style.display='block';
+    bmb.textContent=`🤖 ${bm.name} legte ${bm.move}`;
+  } else {
+    bmb.style.display='none';
   }
   // Log
   const le=document.getElementById('log-entries');
