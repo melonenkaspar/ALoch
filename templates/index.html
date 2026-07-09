@@ -5,813 +5,456 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Arschloch</title>
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
-
-  :root {
-    --bg:       #0f0f0f;
-    --surface:  #1a1a1a;
-    --border:   #2a2a2a;
-    --accent:   #c8a84b;
-    --accent2:  #e8c87a;
-    --text:     #e8e0d0;
-    --muted:    #666;
-    --red:      #c0392b;
-    --green:    #27ae60;
-    --blue:     #2980b9;
-  }
-
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Inter', sans-serif;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-
-  header {
-    width: 100%;
-    padding: 1.5rem 2rem;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: baseline;
-    gap: 1rem;
-  }
-
-  header h1 {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 2.2rem;
-    letter-spacing: 0.05em;
-    color: var(--accent);
-  }
-
-  header span {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.75rem;
-    color: var(--muted);
-    letter-spacing: 0.1em;
-  }
-
-  main {
-    width: 100%;
-    max-width: 900px;
-    padding: 2rem 1.5rem;
-    flex: 1;
-  }
-
-  /* ── Screens ── */
-  .screen { display: none; }
-  .screen.active { display: block; }
-
-  /* ── Cards (UI) ── */
-  .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1.5rem;
-  }
-
-  .card h2 {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 1.4rem;
-    letter-spacing: 0.05em;
-    color: var(--accent);
-    margin-bottom: 1.2rem;
-  }
-
-  /* ── Form ── */
-  label {
-    display: block;
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
-    color: var(--muted);
-    text-transform: uppercase;
-    margin-bottom: 0.4rem;
-    margin-top: 1rem;
-  }
-
-  input[type=text] {
-    width: 100%;
-    background: #111;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--text);
-    font-family: 'DM Mono', monospace;
-    font-size: 1rem;
-    padding: 0.6rem 0.8rem;
-    outline: none;
-    transition: border-color 0.2s;
-  }
-
-  input[type=text]:focus { border-color: var(--accent); }
-
-  .btn {
-    display: inline-block;
-    background: var(--accent);
-    color: #111;
-    font-family: 'Inter', sans-serif;
-    font-weight: 600;
-    font-size: 0.85rem;
-    letter-spacing: 0.05em;
-    padding: 0.65rem 1.4rem;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 0.15s;
-    margin-top: 1rem;
-  }
-
-  .btn:hover { background: var(--accent2); }
-  .btn.secondary {
-    background: transparent;
-    border: 1px solid var(--border);
-    color: var(--text);
-  }
-  .btn.secondary:hover { border-color: var(--accent); color: var(--accent); }
-
-  .btn-row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; }
-
-  .player-count-btn {
-    background: #111;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--muted);
-    font-family: 'DM Mono', monospace;
-    font-size: 1rem;
-    width: 44px; height: 44px;
-    cursor: pointer;
-    transition: border-color 0.15s, color 0.15s;
-  }
-  .player-count-btn:hover { border-color: var(--accent); color: var(--accent); }
-  .player-count-btn.active { border-color: var(--accent); color: var(--accent); background: #1e1a12; }
-
-  .sort-btn {
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    color: var(--muted);
-    font-size: 0.75rem;
-    padding: 0.3rem 0.6rem;
-    cursor: pointer;
-    font-family: 'DM Mono', monospace;
-    transition: border-color 0.15s, color 0.15s;
-  }
-  .sort-btn:hover { border-color: var(--accent); color: var(--accent); }
-
-  /* ── Divider ── */
-  .divider {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin: 1.5rem 0;
-    color: var(--muted);
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-  .divider::before, .divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-  }
-
-  /* ── Error ── */
-  .error-msg {
-    color: var(--red);
-    font-size: 0.82rem;
-    margin-top: 0.5rem;
-    min-height: 1.2rem;
-  }
-
-  /* ── Lobby ── */
-  #lobby-code {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 3rem;
-    letter-spacing: 0.2em;
-    color: var(--accent);
-    text-align: center;
-    padding: 1rem 0;
-  }
-
-  .lobby-code-label {
-    text-align: center;
-    font-size: 0.72rem;
-    color: var(--muted);
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    margin-bottom: 0.3rem;
-  }
-
-  .player-list {
-    list-style: none;
-    margin-top: 1rem;
-  }
-
-  .player-list li {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--border);
-    font-size: 0.9rem;
-  }
-
-  .player-list li:last-child { border-bottom: none; }
-
-  .pip {
-    width: 8px; height: 8px;
-    border-radius: 50%;
-    background: var(--green);
-    flex-shrink: 0;
-  }
-
-  .slot-empty .pip { background: var(--border); }
-  .slot-empty { color: var(--muted); }
-
-  #lobby-status {
-    font-size: 0.8rem;
-    color: var(--muted);
-    text-align: center;
-    margin-top: 0.75rem;
-  }
-
-  /* ── Game Table ── */
-  #game-screen { display: none; }
-  #game-screen.active { display: grid; grid-template-columns: 1fr 280px; gap: 1.5rem; }
-
-  .game-main { display: flex; flex-direction: column; gap: 1rem; }
-
-  /* Opponents */
-  #opponents {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.6rem;
-  }
-
-  .opponent-chip {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 0.5rem 0.8rem;
-    font-size: 0.8rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-    min-width: 90px;
-  }
-
-  .opponent-chip .oname { font-weight: 600; }
-  .opponent-chip .orank { font-size: 0.68rem; color: var(--accent); font-family: 'DM Mono', monospace; }
-  .opponent-chip .ocards { font-size: 0.7rem; color: var(--muted); }
-  .opponent-chip.active-player { border-color: var(--accent); }
-
-  /* Pile */
-  #pile-area {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1.2rem;
-    min-height: 120px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-  }
-
-  #pile-label {
-    font-size: 0.7rem;
-    color: var(--muted);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  #pile-cards {
-    display: flex;
-    gap: 0.3rem;
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-
-  .card-chip {
-    background: #fff;
-    color: #111;
-    border-radius: 5px;
-    padding: 0.3rem 0.5rem;
-    font-family: 'DM Mono', monospace;
-    font-size: 0.85rem;
-    font-weight: 500;
-    min-width: 36px;
-    text-align: center;
-  }
-
-  .card-chip.red { color: var(--red); }
-  .card-chip.black { color: #111; }
-
-  #turn-banner {
-    text-align: center;
-    font-size: 0.82rem;
-    color: var(--muted);
-  }
-
-  #turn-banner span { color: var(--accent); font-weight: 600; }
-
-  /* Hand */
-  #hand-area {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1.2rem;
-  }
-
-  #hand-area h3 {
-    font-size: 0.72rem;
-    color: var(--muted);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    margin-bottom: 0.8rem;
-  }
-
-  #hand-cards {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-  }
-
-  /* Move buttons */
-  #moves-area {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1.2rem;
-  }
-
-  #moves-area h3 {
-    font-size: 0.72rem;
-    color: var(--muted);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    margin-bottom: 0.8rem;
-  }
-
-  #move-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .move-btn {
-    background: #111;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    color: var(--text);
-    font-family: 'DM Mono', monospace;
-    font-size: 0.9rem;
-    padding: 0.5rem 1rem;
-    cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
-  }
-
-  .move-btn:hover { border-color: var(--accent); background: #1e1a12; color: var(--accent); }
-  .move-btn.pass-btn { border-color: var(--muted); color: var(--muted); }
-  .move-btn.pass-btn:hover { border-color: var(--red); color: var(--red); background: #1a1010; }
-
-  #waiting-msg {
-    color: var(--muted);
-    font-size: 0.85rem;
-    font-style: italic;
-  }
-
-  /* Sidebar */
-  .game-sidebar { display: flex; flex-direction: column; gap: 1rem; }
-
-  #log-box {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1rem;
-    flex: 1;
-  }
-
-  #log-box h3 {
-    font-size: 0.72rem;
-    color: var(--muted);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    margin-bottom: 0.6rem;
-  }
-
-  #log-entries {
-    font-family: 'DM Mono', monospace;
-    font-size: 0.75rem;
-    line-height: 1.7;
-    color: var(--muted);
-    max-height: 300px;
-    overflow-y: auto;
-  }
-
-  #log-entries p { border-bottom: 1px solid #1e1e1e; padding: 0.15rem 0; }
-  #log-entries p:last-child { color: var(--text); }
-
-  /* Finished */
-  #finished-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.85);
-    z-index: 100;
-    align-items: center;
-    justify-content: center;
-  }
-
-  #finished-overlay.active { display: flex; }
-
-  #finished-box {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 2.5rem;
-    max-width: 420px;
-    width: 90%;
-    text-align: center;
-  }
-
-  #finished-box h2 {
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: 2rem;
-    color: var(--accent);
-    letter-spacing: 0.05em;
-    margin-bottom: 1.2rem;
-  }
-
-  .rank-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--border);
-    font-size: 0.9rem;
-  }
-
-  .rank-row:last-child { border-bottom: none; }
-  .rank-label { font-family: 'DM Mono', monospace; color: var(--accent); font-size: 0.8rem; }
-
-  @media (max-width: 640px) {
-    #game-screen.active { grid-template-columns: 1fr; }
-  }
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap');
+:root{--bg:#0f0f0f;--surface:#1a1a1a;--border:#2a2a2a;--accent:#c8a84b;--accent2:#e8c87a;--text:#e8e0d0;--muted:#666;--red:#c0392b;--green:#27ae60}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center}
+header{width:100%;padding:1.2rem 2rem;border-bottom:1px solid var(--border);display:flex;align-items:baseline;gap:1rem}
+header h1{font-family:'Bebas Neue',sans-serif;font-size:2rem;letter-spacing:.05em;color:var(--accent)}
+header span{font-family:'DM Mono',monospace;font-size:.72rem;color:var(--muted)}
+header nav{margin-left:auto;display:flex;gap:.5rem}
+main{width:100%;max-width:960px;padding:1.5rem 1rem;flex:1}
+.screen{display:none}.screen.active{display:block}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1.5rem}
+.card h2{font-family:'Bebas Neue',sans-serif;font-size:1.3rem;letter-spacing:.05em;color:var(--accent);margin-bottom:1rem}
+label{display:block;font-size:.72rem;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin:.8rem 0 .3rem}
+input[type=text]{width:100%;background:#111;border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'DM Mono',monospace;font-size:.95rem;padding:.55rem .75rem;outline:none;transition:border-color .2s}
+input[type=text]:focus{border-color:var(--accent)}
+.btn{display:inline-block;background:var(--accent);color:#111;font-family:'Inter',sans-serif;font-weight:600;font-size:.82rem;padding:.6rem 1.2rem;border:none;border-radius:4px;cursor:pointer;transition:background .15s;margin-top:.8rem}
+.btn:hover{background:var(--accent2)}
+.btn.sec{background:transparent;border:1px solid var(--border);color:var(--text);margin-top:.8rem}
+.btn.sec:hover{border-color:var(--accent);color:var(--accent)}
+.btn-row{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.8rem}
+.err{color:var(--red);font-size:.8rem;margin-top:.4rem;min-height:1rem}
+/* lobby */
+.slot-grid{display:flex;flex-direction:column;gap:.5rem;margin-top:.8rem}
+.slot{display:flex;align-items:center;gap:.75rem;padding:.6rem .8rem;background:#111;border:1px solid var(--border);border-radius:6px;font-size:.85rem}
+.slot .pip{width:8px;height:8px;border-radius:50%;background:var(--green);flex-shrink:0}
+.slot.empty .pip{background:var(--border)}.slot.empty{color:var(--muted)}
+.slot.bot{color:var(--accent)}
+.slot .tag{font-size:.65rem;font-family:'DM Mono',monospace;background:var(--border);padding:.1rem .35rem;border-radius:3px;margin-left:auto}
+.slot .rm{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:.8rem;margin-left:.5rem;padding:.1rem .3rem}
+.slot .rm:hover{color:var(--red)}
+#lobby-code{font-family:'Bebas Neue',sans-serif;font-size:3rem;letter-spacing:.2em;color:var(--accent);text-align:center;padding:.8rem 0}
+.lobby-sub{text-align:center;font-size:.72rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+/* game */
+#game-screen.active{display:grid;grid-template-columns:1fr 270px;gap:1.2rem}
+.game-main{display:flex;flex-direction:column;gap:.9rem}
+#round-banner{font-family:'DM Mono',monospace;font-size:.72rem;color:var(--muted);text-align:center;padding:.3rem;letter-spacing:.08em}
+#opponents{display:flex;flex-wrap:wrap;gap:.5rem}
+.opp{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:.5rem .75rem;font-size:.78rem;min-width:100px}
+.opp .oname{font-weight:600}
+.opp .oinfo{font-size:.68rem;color:var(--muted);margin-top:.15rem}
+.opp .orank{font-size:.65rem;color:var(--accent);font-family:'DM Mono',monospace;margin-top:.1rem}
+.opp.cur{border-color:var(--accent)}
+#pile-area{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem;min-height:100px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.4rem}
+#pile-label{font-size:.68rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+#pile-cards{display:flex;gap:.3rem;flex-wrap:wrap;justify-content:center}
+.cc{background:#fff;color:#111;border-radius:4px;padding:.25rem .45rem;font-family:'DM Mono',monospace;font-size:.82rem;font-weight:500;min-width:32px;text-align:center}
+.cc.red{color:var(--red)}
+#turn-banner{font-size:.8rem;color:var(--muted);text-align:center}
+#turn-banner span{color:var(--accent);font-weight:600}
+#hand-area{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem}
+.hand-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.7rem}
+.hand-header h3{font-size:.7rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin:0}
+.sort-btn{background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--muted);font-size:.72rem;padding:.25rem .5rem;cursor:pointer;font-family:'DM Mono',monospace}
+.sort-btn:hover{border-color:var(--accent);color:var(--accent)}
+#hand-cards{display:flex;flex-wrap:wrap;gap:.35rem}
+#moves-area{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem}
+#moves-area h3{font-size:.7rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.7rem}
+#move-buttons{display:flex;flex-wrap:wrap;gap:.4rem}
+.mv{background:#111;border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:'DM Mono',monospace;font-size:.88rem;padding:.45rem .9rem;cursor:pointer;transition:border-color .15s,background .15s}
+.mv:hover{border-color:var(--accent);background:#1e1a12;color:var(--accent)}
+.mv.pass{border-color:var(--muted);color:var(--muted)}
+.mv.pass:hover{border-color:var(--red);color:var(--red);background:#1a1010}
+#wait-msg{color:var(--muted);font-size:.82rem;font-style:italic}
+/* trading */
+#trade-area{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem}
+#trade-area h3{font-size:.7rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.7rem}
+#trade-info{font-size:.82rem;color:var(--text);margin-bottom:.7rem;line-height:1.6}
+#trade-cards{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.7rem}
+.tc{background:#111;border:2px solid var(--border);border-radius:4px;padding:.25rem .45rem;font-family:'DM Mono',monospace;font-size:.82rem;cursor:pointer;transition:border-color .15s}
+.tc.red{color:var(--red)}
+.tc.selected{border-color:var(--accent);background:#1e1a12}
+/* sidebar */
+.game-sidebar{display:flex;flex-direction:column;gap:.9rem}
+#log-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem;flex:1}
+#log-box h3{font-size:.7rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.5rem}
+#log-entries{font-family:'DM Mono',monospace;font-size:.72rem;line-height:1.7;color:var(--muted);max-height:280px;overflow-y:auto}
+#log-entries p{border-bottom:1px solid #1a1a1a;padding:.1rem 0}
+#log-entries p:last-child{color:var(--text)}
+#bot-panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.8rem}
+#bot-panel h3{font-size:.7rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.5rem}
+/* finished */
+#fin-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:100;align-items:center;justify-content:center}
+#fin-overlay.active{display:flex}
+#fin-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:2rem;max-width:380px;width:90%;text-align:center}
+#fin-box h2{font-family:'Bebas Neue',sans-serif;font-size:1.8rem;color:var(--accent);margin-bottom:1rem}
+.rank-row{display:flex;justify-content:space-between;align-items:center;padding:.4rem 0;border-bottom:1px solid var(--border);font-size:.88rem}
+.rank-row:last-child{border-bottom:none}
+.rank-lbl{font-family:'DM Mono',monospace;color:var(--accent);font-size:.75rem}
+/* log viewer */
+#logs-screen .card{max-width:700px;margin:0 auto}
+#log-output{font-family:'DM Mono',monospace;font-size:.75rem;line-height:1.8;color:var(--muted);max-height:60vh;overflow-y:auto;margin-top:.8rem;border-top:1px solid var(--border);padding-top:.8rem}
+.game-entry{margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid var(--border)}
+.game-entry h4{color:var(--accent);font-size:.8rem;margin-bottom:.4rem}
+.move-line{padding:.1rem 0;border-bottom:1px solid #1a1a1a}
+.move-line:last-child{border:none}
+@media(max-width:640px){#game-screen.active{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
-
 <header>
   <h1>Arschloch</h1>
   <span>Kartenspiel</span>
+  <nav>
+    <button class="btn sec" style="margin-top:0;font-size:.75rem" onclick="showScreen('logs-screen')">📋 Logs</button>
+    <button class="btn sec" style="margin-top:0;font-size:.75rem" onclick="showScreen('home-screen')">🏠 Home</button>
+  </nav>
 </header>
-
 <main>
 
-  <!-- ── Home Screen ── -->
-  <div id="home-screen" class="screen active">
-    <div class="card" style="max-width:420px; margin:0 auto;">
-      <h2>Spielen</h2>
-      <label for="player-name">Dein Name</label>
-      <input type="text" id="player-name" placeholder="Name eingeben" maxlength="20">
-      <label>Spieleranzahl</label>
-      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.25rem;">
-        <button class="player-count-btn active" data-count="2" onclick="selectCount(this)">2</button>
-        <button class="player-count-btn" data-count="3" onclick="selectCount(this)">3</button>
-        <button class="player-count-btn" data-count="4" onclick="selectCount(this)">4</button>
-        <button class="player-count-btn" data-count="5" onclick="selectCount(this)">5</button>
-      </div>
-      <label>Deck-Größe</label>
-      <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.25rem;">
-        <button class="player-count-btn active" data-deck="full" onclick="selectDeck(this)">Voll <span style="font-size:0.65rem; color:var(--muted);">2–A</span></button>
-        <button class="player-count-btn" data-deck="half" onclick="selectDeck(this)">Halb <span style="font-size:0.65rem; color:var(--muted);">7–A</span></button>
-      </div>
-      <div id="home-error" class="error-msg"></div>
-      <div class="btn-row">
-        <button class="btn" onclick="createLobby()">Spiel erstellen</button>
-        <button class="btn secondary" onclick="showJoin()">Beitreten</button>
-      </div>
-
-      <div id="join-section" style="display:none;">
-        <div class="divider">Raum-Code</div>
-        <label for="join-code">Code eingeben</label>
-        <input type="text" id="join-code" placeholder="ABC123" maxlength="6" style="text-transform:uppercase; letter-spacing:0.15em;">
-        <div class="btn-row">
-          <button class="btn" onclick="joinLobby()">Beitreten</button>
-        </div>
-      </div>
+<!-- HOME -->
+<div id="home-screen" class="screen active">
+  <div class="card" style="max-width:400px;margin:0 auto">
+    <h2>Spielen</h2>
+    <label>Dein Name</label>
+    <input type="text" id="player-name" placeholder="Name eingeben" maxlength="20">
+    <div id="home-err" class="err"></div>
+    <div class="btn-row">
+      <button class="btn" onclick="createLobby()">Spiel erstellen</button>
+      <button class="btn sec" onclick="showJoin()">Beitreten</button>
+    </div>
+    <div id="join-sec" style="display:none">
+      <label>Raum-Code</label>
+      <input type="text" id="join-code" placeholder="ABC123" maxlength="6" style="text-transform:uppercase;letter-spacing:.15em">
+      <div class="btn-row"><button class="btn" onclick="joinLobby()">Beitreten</button></div>
     </div>
   </div>
+</div>
 
-  <!-- ── Lobby Screen ── -->
-  <div id="lobby-screen" class="screen">
-    <div class="card" style="max-width:480px; margin:0 auto;">
-      <div class="lobby-code-label">Raum-Code</div>
-      <div id="lobby-code">––––––</div>
-      <p style="text-align:center; font-size:0.8rem; color:var(--muted); margin-bottom:1.5rem;">
-        Teile diesen Code mit den anderen Spielern
-      </p>
-
-      <div id="lobby-settings" style="font-size:0.78rem; color:var(--muted); text-align:center; margin-bottom:1rem; font-family:'DM Mono',monospace;"></div>
-      <h2>Spieler</h2>
-      <ul class="player-list" id="player-list"></ul>
-      <div id="lobby-status"></div>
-
-      <div class="btn-row">
-        <button class="btn" id="start-btn" onclick="startGame()" style="display:none;">Spiel starten</button>
-      </div>
+<!-- LOBBY -->
+<div id="lobby-screen" class="screen">
+  <div class="card" style="max-width:460px;margin:0 auto">
+    <div class="lobby-sub">Raum-Code</div>
+    <div id="lobby-code">——————</div>
+    <p style="text-align:center;font-size:.78rem;color:var(--muted);margin-bottom:1.2rem">Teile diesen Code mit anderen Spielern</p>
+    <h2>Spieler (5)</h2>
+    <div class="slot-grid" id="slot-grid"></div>
+    <div id="lobby-status" style="font-size:.78rem;color:var(--muted);text-align:center;margin-top:.6rem"></div>
+    <div class="btn-row">
+      <button class="btn" id="add-bot-btn" onclick="addBot()" style="display:none">+ Bot hinzufügen</button>
+      <button class="btn" id="start-btn" onclick="startGame()" style="display:none">Spiel starten</button>
     </div>
   </div>
+</div>
 
-  <!-- ── Game Screen ── -->
-  <div id="game-screen" class="screen">
-    <div class="game-main">
-
-      <div id="opponents"></div>
-
-      <div id="pile-area">
-        <div id="pile-label">Stapel</div>
-        <div id="pile-cards"><span style="color:var(--muted); font-size:0.82rem;">Leer</span></div>
-        <div id="turn-banner"></div>
-      </div>
-
-      <div id="hand-area">
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.8rem;">
-          <h3 style="margin:0;">Deine Hand</h3>
-          <button class="sort-btn" id="sort-toggle" onclick="toggleSort()" title="Sortierung umschalten">⇅ <span id="sort-label">sortiert</span></button>
-        </div>
-        <div id="hand-cards"></div>
-      </div>
-
-      <div id="moves-area">
-        <h3>Mögliche Züge</h3>
-        <div id="move-buttons"></div>
-      </div>
-
+<!-- GAME -->
+<div id="game-screen" class="screen">
+  <div class="game-main">
+    <div id="round-banner">Runde 1</div>
+    <div id="opponents"></div>
+    <div id="pile-area">
+      <div id="pile-label">Stapel</div>
+      <div id="pile-cards"><span style="color:var(--muted);font-size:.8rem">Leer</span></div>
+      <div id="turn-banner"></div>
     </div>
-
-    <div class="game-sidebar">
-      <div id="log-box">
-        <h3>Spielverlauf</h3>
-        <div id="log-entries"></div>
+    <div id="hand-area">
+      <div class="hand-header">
+        <h3>Deine Hand</h3>
+        <button class="sort-btn" onclick="toggleSort()">⇅ <span id="sort-lbl">sortiert</span></button>
       </div>
+      <div id="hand-cards"></div>
+    </div>
+    <div id="moves-area">
+      <h3>Mögliche Züge</h3>
+      <div id="move-buttons"></div>
+    </div>
+    <div id="trade-area" style="display:none">
+      <h3>Trading</h3>
+      <div id="trade-info"></div>
+      <div id="trade-cards"></div>
+      <button class="btn" onclick="submitTrade()">Tauschen bestätigen</button>
+      <div id="trade-err" class="err"></div>
     </div>
   </div>
+  <div class="game-sidebar">
+    <div id="log-box">
+      <h3>Spielverlauf</h3>
+      <div id="log-entries"></div>
+    </div>
+    <div id="bot-panel" style="display:none">
+      <h3>Bots</h3>
+      <button class="btn sec" style="margin-top:.3rem;font-size:.75rem;width:100%" onclick="addBotMidgame()">+ Bot hinzufügen</button>
+    </div>
+  </div>
+</div>
+
+<!-- LOGS -->
+<div id="logs-screen" class="screen">
+  <div class="card">
+    <h2>Spielverlauf-Archiv</h2>
+    <label>Passwort</label>
+    <input type="text" id="log-pw" placeholder="Passwort eingeben">
+    <div class="btn-row"><button class="btn" onclick="fetchLogs()">Laden</button></div>
+    <div id="log-err" class="err"></div>
+    <div id="log-output"></div>
+  </div>
+</div>
 
 </main>
 
-<!-- ── Finished Overlay ── -->
-<div id="finished-overlay">
-  <div id="finished-box">
-    <h2>Spiel beendet</h2>
-    <div id="finished-ranks"></div>
-    <button class="btn" style="margin-top:1.5rem;" onclick="location.reload()">Neues Spiel</button>
+<!-- FINISHED OVERLAY -->
+<div id="fin-overlay">
+  <div id="fin-box">
+    <h2>Runde beendet!</h2>
+    <div id="fin-ranks"></div>
+    <div class="btn-row" style="justify-content:center;margin-top:1.2rem">
+      <button class="btn" id="next-round-btn" onclick="nextRound()" style="display:none">Nächste Runde →</button>
+      <button class="btn sec" onclick="location.reload()">Beenden</button>
+    </div>
   </div>
 </div>
 
 <script>
-  let gameId = null;
-  let playerId = null;
-  let myEntityID = null;
-  let isHost = false;
-  let pollInterval = null;
-  let selectedCount = 2;
-  let selectedDeck = 'full';
-  let sortEnabled = true;
-  let lastHand = [];
+let gameId=null,playerId=null,myEntityID=null,isHost=false;
+let poll=null,sortEnabled=true,lastHand=[],selectedTrade=[],lastStatus=null;
 
-  function selectCount(btn) {
-    document.querySelectorAll('[data-count]').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    selectedCount = parseInt(btn.dataset.count);
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+async function api(path,method='GET',body=null){
+  const o={method,headers:{'Content-Type':'application/json'}};
+  if(body) o.body=JSON.stringify(body);
+  const r=await fetch(path,o); return r.json();
+}
+function suitRed(c){return c.includes('♥')||c.includes('♦')}
+function cc(c){return `<span class="cc${suitRed(c)?' red':''}">${c}</span>`}
+function cardVal(c){
+  const R={"2":0,"3":4,"4":8,"5":12,"6":16,"7":20,"8":24,"9":28,"T":32,"J":36,"Q":40,"K":44,"A":48};
+  const S={"♣":0,"♦":1,"♥":2,"♠":3};
+  return (R[c[0]]??0)+(S[c[1]]??0);
+}
+function renderHand(hand){
+  lastHand=hand;
+  const d=document.getElementById('hand-cards');
+  if(!hand||!hand.length){d.innerHTML='<span style="color:var(--muted);font-size:.8rem">Keine Karten</span>';return}
+  const display=sortEnabled?[...hand].sort((a,b)=>cardVal(a)-cardVal(b)):hand;
+  d.innerHTML=display.map(c=>`<span class="cc${suitRed(c)?' red':''}">${c}</span>`).join('');
+}
+function toggleSort(){
+  sortEnabled=!sortEnabled;
+  document.getElementById('sort-lbl').textContent=sortEnabled?'sortiert':'original';
+  renderHand(lastHand);
+}
+
+// HOME
+function showJoin(){document.getElementById('join-sec').style.display='block'}
+async function createLobby(){
+  const name=document.getElementById('player-name').value.trim();
+  if(!name){document.getElementById('home-err').textContent='Name eingeben.';return}
+  const d=await api('/api/lobby/create','POST',{name});
+  if(d.error){document.getElementById('home-err').textContent=d.error;return}
+  gameId=d.game_id;playerId=d.player_id;isHost=true;enterLobby();
+}
+async function joinLobby(){
+  const name=document.getElementById('player-name').value.trim();
+  const code=document.getElementById('join-code').value.trim().toUpperCase();
+  if(!name||!code){document.getElementById('home-err').textContent='Name und Code eingeben.';return}
+  const d=await api('/api/lobby/join','POST',{name,game_id:code});
+  if(d.error){document.getElementById('home-err').textContent=d.error;return}
+  gameId=d.game_id;playerId=d.player_id;isHost=false;enterLobby();
+}
+
+// LOBBY
+function enterLobby(){
+  document.getElementById('lobby-code').textContent=gameId;
+  showScreen('lobby-screen');
+  if(isHost){
+    document.getElementById('add-bot-btn').style.display='inline-block';
+    document.getElementById('start-btn').style.display='inline-block';
   }
+  poll=setInterval(pollLobby,2000);pollLobby();
+}
+async function pollLobby(){
+  const d=await api(`/api/lobby/${gameId}`);
+  if(d.status==='playing'||d.status==='trading'){clearInterval(poll);enterGame();return}
+  const grid=document.getElementById('slot-grid');
+  grid.innerHTML='';
+  let humans=0,bots=0,empty=0;
+  d.players.forEach((p,i)=>{
+    const div=document.createElement('div');
+    if(!p){empty++;div.className='slot empty';div.innerHTML=`<span class="pip"></span><span>Platz ${i+1} – leer</span>`;}
+    else if(p.isBot){bots++;div.className='slot bot';
+      div.innerHTML=`<span class="pip" style="background:var(--accent)"></span><span>${p.name}</span><span class="tag">BOT</span>`
+        +(isHost&&i>0?`<button class="rm" onclick="removeBot(${i})">✕</button>`:'');}
+    else{humans++;div.className='slot';
+      div.innerHTML=`<span class="pip"></span><span>${p.name}${i===0?' <span style="color:var(--muted);font-size:.68rem">(Host)</span>':''}</span>`;}
+    grid.appendChild(div);
+  });
+  document.getElementById('lobby-status').textContent=`${humans} Mensch(en) · ${bots} Bot(s) · ${empty} leer`;
+  document.getElementById('add-bot-btn').style.display=(isHost&&empty>0)?'inline-block':'none';
+}
+async function addBot(){
+  const d=await api(`/api/lobby/${gameId}/bot`,'POST',{player_id:playerId});
+  if(d.error)alert(d.error);else pollLobby();
+}
+async function removeBot(idx){
+  await api(`/api/lobby/${gameId}/remove_bot`,'POST',{player_id:playerId,slot:idx});
+  pollLobby();
+}
+async function startGame(){
+  const d=await api(`/api/lobby/${gameId}/start`,'POST',{player_id:playerId});
+  if(d.error){alert(d.error);return}
+  clearInterval(poll);enterGame();
+}
 
-  function selectDeck(btn) {
-    document.querySelectorAll('[data-deck]').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    selectedDeck = btn.dataset.deck;
-  }
-
-  function toggleSort() {
-    sortEnabled = !sortEnabled;
-    document.getElementById('sort-label').textContent = sortEnabled ? 'sortiert' : 'original';
-    renderHand(lastHand);
-  }
-
-  function renderHand(hand) {
-    lastHand = hand;
-    const handDiv = document.getElementById('hand-cards');
-    if (!hand || hand.length === 0) {
-      handDiv.innerHTML = '<span style="color:var(--muted); font-size:0.82rem;">Keine Karten mehr</span>';
-      return;
-    }
-    const display = sortEnabled ? [...hand].sort((a, b) => cardSortValue(a) - cardSortValue(b)) : hand;
-    handDiv.innerHTML = display.map(cardHTML).join('');
-  }
-
-  function cardSortValue(card) {
-    const rankOrder = {"2":0,"3":4,"4":8,"5":12,"6":16,"7":20,"8":24,"9":28,"T":32,"J":36,"Q":40,"K":44,"A":48};
-    const suitOrder = {"♣":0,"♦":1,"♥":2,"♠":3};
-    return (rankOrder[card[0]] ?? 0) + (suitOrder[card[1]] ?? 0);
-  }
-
-  // ── Helpers ──────────────────────────────────────────────────────────────────
-  function show(id) {
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-  }
-
-  function suitColor(card) {
-    return (card.includes('♥') || card.includes('♦')) ? 'red' : 'black';
-  }
-
-  function cardHTML(card) {
-    return `<span class="card-chip ${suitColor(card)}">${card}</span>`;
-  }
-
-  async function api(path, method = 'GET', body = null) {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
-    if (body) opts.body = JSON.stringify(body);
-    const res = await fetch(path, opts);
-    return res.json();
-  }
-
-  // ── Home ─────────────────────────────────────────────────────────────────────
-  function showJoin() {
-    document.getElementById('join-section').style.display = 'block';
-  }
-
-  async function createLobby() {
-    const name = document.getElementById('player-name').value.trim();
-    if (!name) { document.getElementById('home-error').textContent = 'Bitte einen Namen eingeben.'; return; }
-    const data = await api('/api/lobby/create', 'POST', { name, max_players: selectedCount, deck_size: selectedDeck });
-    if (data.error) { document.getElementById('home-error').textContent = data.error; return; }
-    gameId = data.game_id;
-    playerId = data.player_id;
-    isHost = true;
-    enterLobby();
-  }
-
-  async function joinLobby() {
-    const name = document.getElementById('player-name').value.trim();
-    const code = document.getElementById('join-code').value.trim().toUpperCase();
-    if (!name) { document.getElementById('home-error').textContent = 'Bitte einen Namen eingeben.'; return; }
-    if (!code) { document.getElementById('home-error').textContent = 'Bitte einen Code eingeben.'; return; }
-    const data = await api('/api/lobby/join', 'POST', { name, game_id: code });
-    if (data.error) { document.getElementById('home-error').textContent = data.error; return; }
-    gameId = data.game_id;
-    playerId = data.player_id;
-    isHost = false;
-    enterLobby();
-  }
-
-  // ── Lobby ─────────────────────────────────────────────────────────────────────
-  function enterLobby() {
-    document.getElementById('lobby-code').textContent = gameId;
-    show('lobby-screen');
-    if (isHost) document.getElementById('start-btn').style.display = 'inline-block';
-    pollInterval = setInterval(pollLobby, 2000);
-    pollLobby();
-  }
-
-  async function pollLobby() {
-    const data = await api(`/api/lobby/${gameId}`);
-    if (data.status === 'playing') {
-      clearInterval(pollInterval);
-      enterGame();
-      return;
-    }
-    const deckLabel = data.deck_size === 'half' ? 'Halb-Deck (7–A)' : 'Volles Deck (2–A)';
-    document.getElementById('lobby-settings').textContent =
-      `${data.max_players} Spieler · ${deckLabel}`;
-    const list = document.getElementById('player-list');
-    list.innerHTML = '';
-    for (let i = 0; i < data.max_players; i++) {
-      const p = data.players[i];
-      const li = document.createElement('li');
-      if (p) {
-        li.innerHTML = `<span class="pip"></span>${p.name}${i === 0 ? ' <span style="color:var(--muted);font-size:0.7rem;">(Host)</span>' : ''}`;
-      } else {
-        li.classList.add('slot-empty');
-        li.innerHTML = `<span class="pip"></span>Wartet auf Spieler…`;
-      }
-      list.appendChild(li);
-    }
-    document.getElementById('lobby-status').textContent =
-      `${data.players.length} / ${data.max_players} Spieler bereit`;
-  }
-
-  async function startGame() {
-    const data = await api(`/api/lobby/${gameId}/start`, 'POST', { player_id: playerId });
-    if (data.error) { alert(data.error); return; }
-    clearInterval(pollInterval);
-    enterGame();
-  }
-
-  // ── Game ──────────────────────────────────────────────────────────────────────
-  function enterGame() {
-    show('game-screen');
-    pollInterval = setInterval(pollGame, 2000);
-    pollGame();
-  }
-
-  async function pollGame() {
-    const data = await api(`/api/game/${gameId}/state?player_id=${playerId}`);
-    if (!data || data.error) return;
-    myEntityID = data.myEntityID;
-    renderGame(data);
-    if (data.finished) {
-      clearInterval(pollInterval);
-      showFinished(data.players);
-    }
-  }
-
-  function renderGame(data) {
-    // Opponents
-    const oppDiv = document.getElementById('opponents');
-    oppDiv.innerHTML = '';
-    data.players.forEach(p => {
-      if (p.entityID === myEntityID) return;
-      const chip = document.createElement('div');
-      chip.className = 'opponent-chip' + (p.entityID === data.currentTurn ? ' active-player' : '');
-      chip.innerHTML = `
-        <span class="oname">${p.name}</span>
-        <span class="ocards">🃏 ${p.cardCount} Karten</span>
-        ${p.rank ? `<span class="orank">${p.rank}</span>` : ''}
-      `;
-      oppDiv.appendChild(chip);
-    });
-
-    // Pile
-    const pileCards = document.getElementById('pile-cards');
-    if (data.stack && data.stack.length > 0) {
-      pileCards.innerHTML = data.stack.map(cardHTML).join('');
+// GAME
+function enterGame(){
+  showScreen('game-screen');
+  if(isHost)document.getElementById('bot-panel').style.display='block';
+  poll=setInterval(pollGame,2000);pollGame();
+}
+async function pollGame(){
+  const d=await api(`/api/game/${gameId}/state?player_id=${playerId}`);
+  if(!d||d.error)return;
+  myEntityID=d.myEntityID;
+  renderGame(d);
+  if(d.finished&&lastStatus!=='finished'){lastStatus='finished';showFinished(d.players,d.roundNumber);}
+  lastStatus=d.status;
+}
+function renderGame(d){
+  document.getElementById('round-banner').textContent=`Runde ${d.roundNumber||1}`;
+  // Opponents
+  const oDiv=document.getElementById('opponents');
+  oDiv.innerHTML='';
+  d.players.forEach(p=>{
+    if(p.entityID===myEntityID)return;
+    const el=document.createElement('div');
+    el.className='opp'+(p.entityID===d.currentTurn?' cur':'');
+    el.innerHTML=`<div class="oname">${p.name}${p.isBot?' 🤖':''}</div>
+      <div class="oinfo">🃏 ${p.cardCount} Karten</div>
+      ${p.rank?`<div class="orank">${p.rank}</div>`:''}
+      ${p.prevRank?`<div class="oinfo">zuletzt: ${p.prevRank}</div>`:''}`;
+    oDiv.appendChild(el);
+  });
+  // Pile
+  const pile=document.getElementById('pile-cards');
+  pile.innerHTML=d.stack&&d.stack.length?d.stack.map(cc).join('')
+    :'<span style="color:var(--muted);font-size:.8rem">Leer</span>';
+  // Turn
+  const tb=document.getElementById('turn-banner');
+  if(d.status==='trading')tb.innerHTML='<span>Trading-Phase</span>';
+  else if(d.currentTurn===myEntityID)tb.innerHTML='<span>Du bist dran!</span>';
+  else{const cur=d.players.find(p=>p.entityID===d.currentTurn);tb.innerHTML=`Zug von <span>${cur?cur.name:'?'}</span>`;}
+  // Hand
+  const me=d.players.find(p=>p.entityID===myEntityID);
+  renderHand(me?me.hand:[]);
+  // Moves / Trade
+  const movesArea=document.getElementById('moves-area');
+  const tradeArea=document.getElementById('trade-area');
+  if(d.status==='trading'){
+    movesArea.style.display='none';
+    if(d.myTrade&&!d.myTrade.done){
+      tradeArea.style.display='block';
+      renderTrade(d.myTrade,me?me.hand:[],d.players);
     } else {
-      pileCards.innerHTML = '<span style="color:var(--muted); font-size:0.82rem;">Leer</span>';
+      tradeArea.style.display='none';
+      movesArea.style.display='block';
+      document.getElementById('move-buttons').innerHTML='<span id="wait-msg">Warte auf Trading der anderen…</span>';
     }
-
-    // Turn banner
-    const banner = document.getElementById('turn-banner');
-    if (data.currentTurn === myEntityID) {
-      banner.innerHTML = '<span>Du bist dran!</span>';
-    } else {
-      const curName = data.players.find(p => p.entityID === data.currentTurn)?.name || '?';
-      banner.innerHTML = `Zug von <span>${curName}</span>`;
-    }
-
-    // My hand
-    const me = data.players.find(p => p.entityID === myEntityID);
-    renderHand(me ? me.hand : []);
-
-    // Moves
-    const movesDiv = document.getElementById('move-buttons');
-    movesDiv.innerHTML = '';
-    if (data.currentTurn === myEntityID && data.myMoves && data.myMoves.length > 0) {
-      data.myMoves.forEach(move => {
-        const btn = document.createElement('button');
-        btn.className = 'move-btn' + (move === 'pass' ? ' pass-btn' : '');
-        btn.textContent = move === 'pass' ? 'Passen' : move;
-        btn.onclick = () => makeMove(move);
-        movesDiv.appendChild(btn);
+  } else {
+    tradeArea.style.display='none';
+    movesArea.style.display='block';
+    const mb=document.getElementById('move-buttons');mb.innerHTML='';
+    if(d.currentTurn===myEntityID&&d.myMoves&&d.myMoves.length){
+      d.myMoves.forEach(mv=>{
+        const b=document.createElement('button');
+        b.className='mv'+(mv==='pass'?' pass':'');
+        b.textContent=mv==='pass'?'Passen':mv;
+        b.onclick=()=>makeMove(mv);
+        mb.appendChild(b);
       });
-    } else if (data.currentTurn !== myEntityID) {
-      movesDiv.innerHTML = '<span id="waiting-msg">Warte auf anderen Spieler…</span>';
-    } else {
-      movesDiv.innerHTML = '<span id="waiting-msg">Keine Züge möglich – warte auf nächste Runde.</span>';
-    }
-
-    // Log
-    const logDiv = document.getElementById('log-entries');
-    logDiv.innerHTML = data.log.map(l => `<p>${l}</p>`).join('');
-    logDiv.scrollTop = logDiv.scrollHeight;
+    } else {mb.innerHTML='<span id="wait-msg">Warte auf anderen Spieler…</span>';}
   }
+  // Log
+  const le=document.getElementById('log-entries');
+  le.innerHTML=d.log.map(l=>`<p>${l}</p>`).join('');
+  le.scrollTop=le.scrollHeight;
+}
+function renderTrade(trade,hand,players){
+  const target=players.find(p=>p.entityID===trade.to);
+  const dir=trade.direction==='give_best'?'beste':'schlechteste';
+  document.getElementById('trade-info').innerHTML=
+    `Gib deine ${trade.count} ${dir} Karte(n) an <b>${target?target.name:'?'}</b>.`;
+  const tc=document.getElementById('trade-cards');tc.innerHTML='';
+  selectedTrade=[];
+  const display=sortEnabled?[...hand].sort((a,b)=>cardVal(a)-cardVal(b)):hand;
+  display.forEach(c=>{
+    const el=document.createElement('span');
+    el.className='tc'+(suitRed(c)?' red':'');
+    el.textContent=c;
+    el.onclick=()=>{
+      if(selectedTrade.includes(c)){selectedTrade=selectedTrade.filter(x=>x!==c);el.classList.remove('selected');}
+      else if(selectedTrade.length<trade.count){selectedTrade.push(c);el.classList.add('selected');}
+    };
+    tc.appendChild(el);
+  });
+}
+async function makeMove(move){
+  const d=await api(`/api/game/${gameId}/move`,'POST',{player_id:playerId,move});
+  if(d.error){alert(d.error);return}
+  await pollGame();
+}
+async function submitTrade(){
+  if(!selectedTrade.length){document.getElementById('trade-err').textContent='Keine Karte ausgewählt.';return}
+  const d=await api(`/api/game/${gameId}/trade`,'POST',{player_id:playerId,cards:selectedTrade});
+  if(d.error){document.getElementById('trade-err').textContent=d.error;return}
+  document.getElementById('trade-err').textContent='';
+  selectedTrade=[];await pollGame();
+}
+async function addBotMidgame(){
+  const d=await api(`/api/lobby/${gameId}/bot`,'POST',{player_id:playerId});
+  if(d.error)alert(d.error);
+}
 
-  async function makeMove(move) {
-    const data = await api(`/api/game/${gameId}/move`, 'POST', { player_id: playerId, move });
-    if (data.error) { alert(data.error); return; }
-    await pollGame();
-  }
+// FINISHED
+function showFinished(players,roundNum){
+  const order=["President","Vice-President","Citizen","Vice-Brokie","Brokie"];
+  const ranked=players.filter(p=>p.rank).sort((a,b)=>order.indexOf(a.rank)-order.indexOf(b.rank));
+  document.getElementById('fin-ranks').innerHTML=ranked.map(p=>
+    `<div class="rank-row"><span>${p.name}${p.isBot?' 🤖':''}</span><span class="rank-lbl">${p.rank}</span></div>`
+  ).join('');
+  if(isHost)document.getElementById('next-round-btn').style.display='inline-block';
+  document.getElementById('fin-overlay').classList.add('active');
+}
+async function nextRound(){
+  const d=await api(`/api/game/${gameId}/next_round`,'POST',{player_id:playerId});
+  if(d.error){alert(d.error);return}
+  document.getElementById('fin-overlay').classList.remove('active');
+  lastStatus=null;await pollGame();
+}
 
-  function showFinished(players) {
-    const ranked = players.filter(p => p.rank).sort((a, b) => {
-      const order = ["President", "Vice-President", "Citizen", "Vice-Brokie", "Brokie"];
-      return order.indexOf(a.rank) - order.indexOf(b.rank);
-    });
-    const box = document.getElementById('finished-ranks');
-    box.innerHTML = ranked.map(p => `
-      <div class="rank-row">
-        <span>${p.name}</span>
-        <span class="rank-label">${p.rank}</span>
-      </div>
-    `).join('');
-    document.getElementById('finished-overlay').classList.add('active');
-  }
+// LOGS
+async function fetchLogs(){
+  const pw=document.getElementById('log-pw').value.trim();
+  const d=await api(`/api/logs?password=${encodeURIComponent(pw)}`);
+  if(d.error){document.getElementById('log-err').textContent=d.error;return}
+  document.getElementById('log-err').textContent='';
+  const out=document.getElementById('log-output');
+  if(!d.logs.length){out.innerHTML='<p style="color:var(--muted)">Keine Einträge.</p>';return}
+  out.innerHTML=d.logs.map(rec=>{
+    const moves=rec.moves.map(m=>
+      `<div class="move-line">R${m.round} T${m.trick} P${m.p}(${m.name}): ${m.move}${m.auto?' [auto]':''}</div>`
+    ).join('');
+    const plist=rec.players.map(p=>`${p.name}${p.bot?'🤖':''}→${p.rank||'?'}`).join(' | ');
+    return `<div class="game-entry">
+      <h4>${rec.ts.slice(0,19).replace('T',' ')} · Runde ${rec.round} · ${rec.game_id}</h4>
+      <div style="color:var(--text);margin-bottom:.3rem;font-size:.72rem">${plist}</div>
+      ${moves}</div>`;
+  }).join('');
+}
 </script>
 </body>
 </html>
