@@ -80,6 +80,7 @@ def onlyPassAvailable(players, entity, activePlay, enablePass=True):
     return possibleMoves(players, entity, activePlay, enablePass) == ['pass']
 
 def randomMove(moves):
+    """Bots never pass voluntarily if they have real moves."""
     real = [m for m in moves if m != 'pass']
     return random.choice(real) if real else 'pass'
 
@@ -149,41 +150,51 @@ def pendingTradeFor(players, trades, entity_id):
 # ── Turn management ───────────────────────────────────────────────────────────
 
 def advanceTurn(s, g, enablePass=True):
-    trickOrder = s['trickOrder']
-    for _ in range(len(trickOrder) * 2 + 1):
+    for _ in range(60):  # hard cap to prevent infinite loops
+        trickOrder = s['trickOrder']  # re-read each iteration as it may change
+        if not trickOrder:
+            break
         current = s['currentTurn']
+        if current not in trickOrder:
+            # currentTurn is stale – pick first active player
+            active = [e for e in trickOrder if s['players'][e]['rank'] is None]
+            if not active:
+                break
+            s['currentTurn'] = active[0]
+            continue
         if s['players'][current]['rank'] is not None:
-            if current in trickOrder:
-                idx = trickOrder.index(current)
-                s['currentTurn'] = trickOrder[(idx+1) % len(trickOrder)]
+            # Player already finished – advance
+            idx = trickOrder.index(current)
+            s['currentTurn'] = trickOrder[(idx+1) % len(trickOrder)]
             continue
         if onlyPassAvailable(s['players'], current, s['mostRecentMove'], enablePass):
             name = s['players'][current]['name']
-            s['log'].append(f'{name} passt automatisch.')
+            s['log'].append(f'🤖 {name} passt automatisch.')
             _appendMoveLog(s, current, name, 'pass', auto=True)
             s['passedCounter'] += 1
-            active = len([e for e in trickOrder if s['players'][e]['rank'] is None])
-            if s['passedCounter'] >= active:
+            active_count = len([e for e in trickOrder if s['players'][e]['rank'] is None])
+            if s['passedCounter'] >= active_count:
                 _resetRound(s, current, trickOrder)
                 continue
             if current in trickOrder:
                 idx = trickOrder.index(current)
                 s['currentTurn'] = trickOrder[(idx+1) % len(trickOrder)]
             continue
-        # Bot?
-        if s['players'][current].get('isBot'):
-            moves = possibleMoves(s['players'], current, s['mostRecentMove'], enablePass)
-            botMove = randomMove(moves)
-            _executeBotMove(s, g, current, botMove, enablePass)
-            continue
-        break
+        # Human player with real moves – stop and wait
+        if not s['players'][current].get('isBot'):
+            break
+        # Bot with real moves – play immediately
+        moves = possibleMoves(s['players'], current, s['mostRecentMove'], enablePass)
+        botMove = randomMove(moves)  # never returns 'pass' if real moves exist
+        _executeBotMove(s, g, current, botMove, enablePass)
+        if g.get('status') in ('trading', 'finished'):
+            break  # game state changed, stop advancing
 
 def _executeBotMove(s, g, entity_id, move, enablePass=True):
-    from SimulatorFunctions import play, sortHand, assignRank
-    trickOrder  = s['trickOrder']
-    name        = s['players'][entity_id]['name']
+    trickOrder = s['trickOrder']
+    name       = s['players'][entity_id]['name']
     if move == 'pass':
-        s['log'].append(f'{name} passt.')
+        s['log'].append(f'🤖 {name} passt.')
         _appendMoveLog(s, entity_id, name, 'pass')
         s['passedCounter'] += 1
     else:
@@ -191,21 +202,29 @@ def _executeBotMove(s, g, entity_id, move, enablePass=True):
         s['players'][entity_id]['hand'] = sortHand(s['players'][entity_id]['hand'])
         s['mostRecentMove'] = move
         s['passedCounter']  = 0
-        s['log'].append(f'{name} spielt {move}.')
+        s['log'].append(f'🤖 {name} spielt {move}.')
+        s['lastBotMove'] = {'name': name, 'move': move, 'stack': list(s['stack'])}
         _appendMoveLog(s, entity_id, name, move)
         if not s['players'][entity_id]['hand']:
             done = assignRank(s, g, entity_id, move, trickOrder)
             if done: return
+            trickOrder = s['trickOrder']  # re-read after assignRank may mutate it
             if trickOrder:
                 s['currentTurn'] = trickOrder[0]
             return
+    # re-read trickOrder as assignRank may have mutated it
+    trickOrder = s['trickOrder']
     active = len([e for e in trickOrder if s['players'][e]['rank'] is None])
+    if active == 0:
+        return
     if s['passedCounter'] >= active:
         _resetRound(s, entity_id, trickOrder)
         return
     if entity_id in trickOrder:
         idx = trickOrder.index(entity_id)
         s['currentTurn'] = trickOrder[(idx+1) % len(trickOrder)]
+    elif trickOrder:
+        s['currentTurn'] = trickOrder[0]
 
 def _resetRound(s, triggerEntity, trickOrder):
     s['log'].append('Alle gepasst – neue Runde.')
