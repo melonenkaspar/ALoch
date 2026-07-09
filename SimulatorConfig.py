@@ -1,6 +1,4 @@
 # ─── SimulatorConfig.py ───────────────────────────────────────────────────────
-# Central configuration for the Arschloch card game.
-# These are the defaults; per-game settings are passed at runtime.
 
 deckSize    = 'full'
 enablePass  = True
