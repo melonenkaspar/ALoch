@@ -20,12 +20,22 @@ main{width:100%;max-width:960px;padding:1.5rem 1rem;flex:1}
 label{display:block;font-size:.72rem;letter-spacing:.08em;color:var(--muted);text-transform:uppercase;margin:.8rem 0 .3rem}
 input[type=text]{width:100%;background:#111;border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'DM Mono',monospace;font-size:.95rem;padding:.55rem .75rem;outline:none;transition:border-color .2s}
 input[type=text]:focus{border-color:var(--accent)}
+select{background:#111;border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'DM Mono',monospace;font-size:.8rem;padding:.4rem .5rem;width:100%}
 .btn{display:inline-block;background:var(--accent);color:#111;font-family:'Inter',sans-serif;font-weight:600;font-size:.82rem;padding:.6rem 1.2rem;border:none;border-radius:4px;cursor:pointer;transition:background .15s;margin-top:.8rem}
 .btn:hover{background:var(--accent2)}
 .btn.sec{background:transparent;border:1px solid var(--border);color:var(--text);margin-top:.8rem}
 .btn.sec:hover{border-color:var(--accent);color:var(--accent)}
+.btn.danger{background:transparent;border:1px solid var(--red);color:var(--red)}
+.btn.danger:hover{background:#1a1010}
 .btn-row{display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.8rem}
 .err{color:var(--red);font-size:.8rem;margin-top:.4rem;min-height:1rem}
+.hint{font-size:.72rem;color:var(--muted);margin-top:.3rem}
+/* lobby browser */
+.lobby-list{display:flex;flex-direction:column;gap:.5rem;margin-top:.6rem}
+.lobby-row{display:flex;align-items:center;gap:.6rem;padding:.55rem .75rem;background:#111;border:1px solid var(--border);border-radius:6px;font-size:.82rem}
+.lobby-row .lcode{font-family:'DM Mono',monospace;color:var(--accent);letter-spacing:.1em;font-weight:500}
+.lobby-row .lmeta{font-size:.7rem;color:var(--muted)}
+.lobby-row .btn{margin-top:0;margin-left:auto;padding:.35rem .8rem;font-size:.74rem}
 /* lobby */
 .slot-grid{display:flex;flex-direction:column;gap:.5rem;margin-top:.8rem}
 .slot{display:flex;align-items:center;gap:.75rem;padding:.6rem .8rem;background:#111;border:1px solid var(--border);border-radius:6px;font-size:.85rem}
@@ -74,11 +84,13 @@ input[type=text]:focus{border-color:var(--accent)}
 /* trading */
 #trade-area{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem}
 #trade-area h3{font-size:.7rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.7rem}
-#trade-info{font-size:.82rem;color:var(--text);margin-bottom:.7rem;line-height:1.6}
-#trade-cards{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.7rem}
+#trade-info{font-size:.85rem;color:var(--text);margin-bottom:.7rem;line-height:1.6}
+.tcards{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.7rem}
 .tc{background:#111;border:2px solid var(--border);border-radius:4px;padding:.25rem .45rem;font-family:'DM Mono',monospace;font-size:.82rem;cursor:pointer;transition:border-color .15s}
 .tc.red{color:var(--red)}
 .tc.selected{border-color:var(--accent);background:#1e1a12}
+.rk{background:#111;border:2px solid var(--border);border-radius:4px;padding:.3rem .6rem;font-family:'DM Mono',monospace;font-size:.85rem;cursor:pointer}
+.rk.selected{border-color:var(--accent);background:#1e1a12;color:var(--accent)}
 /* sidebar */
 .game-sidebar{display:flex;flex-direction:column;gap:.9rem}
 #log-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem;flex:1}
@@ -86,8 +98,12 @@ input[type=text]:focus{border-color:var(--accent)}
 #log-entries{font-family:'DM Mono',monospace;font-size:.72rem;line-height:1.7;color:var(--muted);max-height:280px;overflow-y:auto}
 #log-entries p{border-bottom:1px solid #1a1a1a;padding:.1rem 0}
 #log-entries p:last-child{color:var(--text)}
-#bot-panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.8rem}
-#bot-panel h3{font-size:.7rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.5rem}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:.8rem}
+.panel h3{font-size:.7rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.5rem}
+.kick-row{display:flex;align-items:center;gap:.4rem;font-size:.76rem;padding:.25rem 0;border-bottom:1px solid #1a1a1a}
+.kick-row:last-child{border:none}
+.kick-row button{margin-left:auto;background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:4px;font-size:.68rem;padding:.15rem .45rem;cursor:pointer}
+.kick-row button:hover{border-color:var(--red);color:var(--red)}
 /* finished */
 #fin-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:100;align-items:center;justify-content:center}
 #fin-overlay.active{display:flex}
@@ -97,10 +113,11 @@ input[type=text]:focus{border-color:var(--accent)}
 .rank-row:last-child{border-bottom:none}
 .rank-lbl{font-family:'DM Mono',monospace;color:var(--accent);font-size:.75rem}
 /* log viewer */
-#logs-screen .card{max-width:700px;margin:0 auto}
+#logs-screen .card{max-width:760px;margin:0 auto}
 #log-output{font-family:'DM Mono',monospace;font-size:.75rem;line-height:1.8;color:var(--muted);max-height:60vh;overflow-y:auto;margin-top:.8rem;border-top:1px solid var(--border);padding-top:.8rem}
 .game-entry{margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid var(--border)}
 .game-entry h4{color:var(--accent);font-size:.8rem;margin-bottom:.4rem}
+.code-pill{font-family:'DM Mono',monospace;background:#111;border:1px solid var(--border);color:var(--accent);border-radius:3px;padding:.05rem .35rem;font-size:.7rem}
 .move-line{padding:.1rem 0;border-bottom:1px solid #1a1a1a}
 .move-line:last-child{border:none}
 @media(max-width:640px){#game-screen.active{grid-template-columns:1fr}}
@@ -112,27 +129,33 @@ input[type=text]:focus{border-color:var(--accent)}
   <span>Kartenspiel</span>
   <nav>
     <button class="btn sec" style="margin-top:0;font-size:.75rem" onclick="showScreen('logs-screen')">📋 Logs</button>
-    <button class="btn sec" style="margin-top:0;font-size:.75rem" onclick="showScreen('home-screen')">🏠 Home</button>
+    <button class="btn sec" style="margin-top:0;font-size:.75rem" onclick="goHome()">🏠 Home</button>
   </nav>
 </header>
 <main>
 
 <!-- HOME -->
 <div id="home-screen" class="screen active">
-  <div class="card" style="max-width:400px;margin:0 auto">
+  <div class="card" style="max-width:480px;margin:0 auto">
     <h2>Spielen</h2>
     <label>Dein Name</label>
     <input type="text" id="player-name" placeholder="Name eingeben" maxlength="20">
     <div id="home-err" class="err"></div>
     <div class="btn-row">
       <button class="btn" onclick="createLobby()">Spiel erstellen</button>
-      <button class="btn sec" onclick="showJoin()">Beitreten</button>
+      <button class="btn sec" onclick="toggleJoin()">Mit Code beitreten</button>
     </div>
     <div id="join-sec" style="display:none">
       <label>Raum-Code</label>
       <input type="text" id="join-code" placeholder="ABC123" maxlength="6" style="text-transform:uppercase;letter-spacing:.15em">
       <div class="btn-row"><button class="btn" onclick="joinLobby()">Beitreten</button></div>
     </div>
+  </div>
+
+  <div class="card" style="max-width:480px;margin:1.2rem auto 0">
+    <h2>Offene Lobbies</h2>
+    <div class="lobby-list" id="lobby-list"></div>
+    <button class="btn sec" style="font-size:.74rem" onclick="refreshLobbies()">↻ Aktualisieren</button>
   </div>
 </div>
 
@@ -145,9 +168,17 @@ input[type=text]:focus{border-color:var(--accent)}
     <h2>Spieler (5)</h2>
     <div class="slot-grid" id="slot-grid"></div>
     <div id="lobby-status" style="font-size:.78rem;color:var(--muted);text-align:center;margin-top:.6rem"></div>
+
+    <div id="lobby-host-panel" style="display:none;margin-top:1rem;border-top:1px solid var(--border);padding-top:.8rem">
+      <label style="margin-top:0">Bot-Geschwindigkeit</label>
+      <select id="lobby-bot-delay" onchange="setBotDelay(this.value)"></select>
+      <div class="hint">„Sofort“ = Bots spielen ohne Verzögerung durch.</div>
+    </div>
+
     <div class="btn-row">
       <button class="btn" id="add-bot-btn" onclick="addBot()" style="display:none">+ Bot hinzufügen</button>
       <button class="btn" id="start-btn" onclick="startGame()" style="display:none">Spiel starten</button>
+      <button class="btn sec" onclick="leaveGame()">Verlassen</button>
     </div>
   </div>
 </div>
@@ -177,8 +208,21 @@ input[type=text]:focus{border-color:var(--accent)}
     <div id="trade-area" style="display:none">
       <h3>Trading</h3>
       <div id="trade-info"></div>
-      <div id="trade-cards"></div>
-      <button class="btn" onclick="submitTrade()">Tauschen bestätigen</button>
+      <div id="trade-wish-step" style="display:none">
+        <div style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem">Welchen Rang möchtest du?</div>
+        <div id="wish-ranks" class="tcards"></div>
+        <button class="btn" onclick="submitWish()">Wunsch bestätigen</button>
+      </div>
+      <div id="trade-give-step" style="display:none">
+        <div id="give-info" style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem"></div>
+        <div id="give-cards" class="tcards"></div>
+        <button class="btn" onclick="submitGive()">Karten abgeben</button>
+      </div>
+      <div id="trade-return-step" style="display:none">
+        <div id="return-info" style="font-size:.78rem;color:var(--muted);margin-bottom:.5rem"></div>
+        <div id="return-cards" class="tcards"></div>
+        <button class="btn" onclick="submitReturn()">Zurückgeben bestätigen</button>
+      </div>
       <div id="trade-err" class="err"></div>
     </div>
   </div>
@@ -187,9 +231,16 @@ input[type=text]:focus{border-color:var(--accent)}
       <h3>Spielverlauf</h3>
       <div id="log-entries"></div>
     </div>
-    <div id="bot-panel" style="display:none">
-      <h3>Bots</h3>
-      <button class="btn sec" style="margin-top:.3rem;font-size:.75rem;width:100%" onclick="addBotMidgame()">+ Bot hinzufügen</button>
+    <div id="host-panel" class="panel" style="display:none">
+      <h3>Host-Steuerung</h3>
+      <label style="margin-top:0">Bot-Geschwindigkeit</label>
+      <select id="game-bot-delay" onchange="setBotDelay(this.value)"></select>
+      <h3 style="margin-top:.9rem">Spieler kicken</h3>
+      <div id="kick-list"></div>
+      <div class="hint">Gekickte Spieler werden von einem Bot ersetzt.</div>
+    </div>
+    <div class="panel">
+      <button class="btn sec" style="margin-top:0;font-size:.74rem;width:100%" onclick="leaveGame()">Runde verlassen</button>
     </div>
   </div>
 </div>
@@ -200,7 +251,12 @@ input[type=text]:focus{border-color:var(--accent)}
     <h2>Spielverlauf-Archiv</h2>
     <label>Passwort</label>
     <input type="text" id="log-pw" placeholder="Passwort eingeben">
-    <div class="btn-row"><button class="btn" onclick="fetchLogs()">Laden</button></div>
+    <label>Lobby-Code filtern (optional)</label>
+    <input type="text" id="log-filter" placeholder="z.B. A1B2C3" maxlength="6" style="text-transform:uppercase">
+    <div class="btn-row">
+      <button class="btn" onclick="fetchLogs()">Laden</button>
+      <button class="btn sec" onclick="exportCsv()">⬇ Als CSV exportieren</button>
+    </div>
     <div id="log-err" class="err"></div>
     <div id="log-output"></div>
   </div>
@@ -215,216 +271,297 @@ input[type=text]:focus{border-color:var(--accent)}
     <div id="fin-ranks"></div>
     <div class="btn-row" style="justify-content:center;margin-top:1.2rem">
       <button class="btn" id="next-round-btn" onclick="nextRound()" style="display:none">Nächste Runde →</button>
-      <button class="btn sec" onclick="location.reload()">Beenden</button>
+      <button class="btn sec" onclick="leaveGame()">Beenden</button>
     </div>
   </div>
 </div>
 
 <script>
-let gameId=null,playerId=null,myEntityID=null,isHost=false;
-let poll=null,sortEnabled=true,lastHand=[],selectedTrade=[],lastStatus=null;
-let botPollFast=false;
+const SESSION_KEY='arschloch_session';
+const DELAY_OPTIONS=[[0,'Sofort (kein Delay)'],[300,'Schnell (0,3 s)'],[900,'Normal (0,9 s)'],[1800,'Langsam (1,8 s)']];
 
+let gameId=null,playerId=null,myEntityID=null,isHost=false;
+let poll=null,pollMs=0,sortEnabled=true,lastHand=[],lastStatus=null;
+let lobbyPoll=null;
+let botDelayMs=900;
+
+// Bot-Banner-State (Fix für Bug 3: kein An/Aus-Flackern mehr)
+let shownBotSeq=-1, botBannerTimer=null;
+// Trade-UI-State
+let selectedTrade=[], selectedWish=null, tradeKey=null;
+
+// ── Utils ────────────────────────────────────────────────────────────────────
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
+  if(id==='home-screen'){startLobbyBrowser()}else{stopLobbyBrowser()}
 }
 async function api(path,method='GET',body=null){
   const o={method,headers:{'Content-Type':'application/json'}};
   if(body) o.body=JSON.stringify(body);
-  const r=await fetch(path,o); return r.json();
+  try{const r=await fetch(path,o);return await r.json();}catch(e){return {error:'Netzwerkfehler'}}
 }
 function suitRed(c){return c.includes('♥')||c.includes('♦')}
-function cc(c){return `<span class="cc${suitRed(c)?' red':''}">${c}</span>`}
+function cc(c){return '<span class="cc'+(suitRed(c)?' red':'')+'">'+c+'</span>'}
 function cardVal(c){
   const R={"2":0,"3":4,"4":8,"5":12,"6":16,"7":20,"8":24,"9":28,"T":32,"J":36,"Q":40,"K":44,"A":48};
   const S={"♣":0,"♦":1,"♥":2,"♠":3};
   return (R[c[0]]??0)+(S[c[1]]??0);
 }
+function sortedHand(hand){return sortEnabled?[...hand].sort((a,b)=>cardVal(a)-cardVal(b)):hand}
 function renderHand(hand){
-  lastHand=hand;
+  lastHand=hand||[];
   const d=document.getElementById('hand-cards');
-  if(!hand||!hand.length){d.innerHTML='<span style="color:var(--muted);font-size:.8rem">Keine Karten</span>';return}
-  const display=sortEnabled?[...hand].sort((a,b)=>cardVal(a)-cardVal(b)):hand;
-  d.innerHTML=display.map(c=>`<span class="cc${suitRed(c)?' red':''}">${c}</span>`).join('');
+  if(!lastHand.length){d.innerHTML='<span style="color:var(--muted);font-size:.8rem">Keine Karten</span>';return}
+  d.innerHTML=sortedHand(lastHand).map(cc).join('');
 }
 function toggleSort(){
   sortEnabled=!sortEnabled;
   document.getElementById('sort-lbl').textContent=sortEnabled?'sortiert':'original';
-  renderHand(lastHand);
+  renderHand(lastHand);tradeKey=null;
+}
+function fillDelaySelects(){
+  [['lobby-bot-delay'],['game-bot-delay']].forEach(([id])=>{
+    const el=document.getElementById(id);
+    el.innerHTML=DELAY_OPTIONS.map(o=>'<option value="'+o[0]+'">'+o[1]+'</option>').join('');
+    el.value=String(botDelayMs);
+  });
 }
 
-// HOME
-function showJoin(){document.getElementById('join-sec').style.display='block'}
+// ── (2) Session-Persistenz ───────────────────────────────────────────────────
+function saveSession(){try{localStorage.setItem(SESSION_KEY,JSON.stringify({gameId,playerId}))}catch(e){}}
+function clearSession(){try{localStorage.removeItem(SESSION_KEY)}catch(e){}}
+async function restoreSession(){
+  let s=null;
+  try{s=JSON.parse(localStorage.getItem(SESSION_KEY)||'null')}catch(e){}
+  if(!s||!s.gameId||!s.playerId) return false;
+  const d=await api('/api/session?game_id='+encodeURIComponent(s.gameId)+'&player_id='+encodeURIComponent(s.playerId));
+  if(!d||!d.valid){clearSession();return false}
+  gameId=s.gameId;playerId=s.playerId;isHost=!!d.isHost;
+  if(d.status==='lobby') enterLobby(); else enterGame();
+  return true;
+}
+function goHome(){stopAll();showScreen('home-screen')}
+function stopAll(){clearInterval(poll);poll=null;pollMs=0}
+
+async function leaveGame(){
+  if(gameId&&playerId) await api('/api/game/'+gameId+'/leave','POST',{player_id:playerId});
+  clearSession();stopAll();
+  gameId=playerId=myEntityID=null;isHost=false;lastStatus=null;
+  document.getElementById('fin-overlay').classList.remove('active');
+  showScreen('home-screen');refreshLobbies();
+}
+function kickedOut(msg){
+  clearSession();stopAll();
+  gameId=playerId=null;isHost=false;lastStatus=null;
+  document.getElementById('fin-overlay').classList.remove('active');
+  showScreen('home-screen');
+  alert(msg||'Du wurdest aus der Runde entfernt.');
+}
+
+// ── (1) Lobby-Browser ────────────────────────────────────────────────────────
+function startLobbyBrowser(){stopLobbyBrowser();refreshLobbies();lobbyPoll=setInterval(refreshLobbies,4000)}
+function stopLobbyBrowser(){if(lobbyPoll){clearInterval(lobbyPoll);lobbyPoll=null}}
+async function refreshLobbies(){
+  const d=await api('/api/lobbies');
+  const el=document.getElementById('lobby-list');
+  if(!d||!d.lobbies||!d.lobbies.length){
+    el.innerHTML='<div style="color:var(--muted);font-size:.8rem">Gerade keine offenen Lobbies. Erstelle eine!</div>';
+    return;
+  }
+  el.innerHTML=d.lobbies.map(l=>
+    '<div class="lobby-row">'+
+      '<span class="lcode">'+l.code+'</span>'+
+      '<span class="lmeta">'+l.host+' · '+l.humans+' 👤 · '+l.bots+' 🤖 · '+(l.empty+l.bots)+' frei</span>'+
+      '<button class="btn" onclick="joinLobby(\''+l.code+'\')">Beitreten</button>'+
+    '</div>').join('');
+}
+
+// ── Home ─────────────────────────────────────────────────────────────────────
+function toggleJoin(){
+  const s=document.getElementById('join-sec');
+  s.style.display=s.style.display==='none'?'block':'none';
+}
 async function createLobby(){
   const name=document.getElementById('player-name').value.trim();
   if(!name){document.getElementById('home-err').textContent='Name eingeben.';return}
   const d=await api('/api/lobby/create','POST',{name});
   if(d.error){document.getElementById('home-err').textContent=d.error;return}
-  gameId=d.game_id;playerId=d.player_id;isHost=true;enterLobby();
+  gameId=d.game_id;playerId=d.player_id;isHost=true;saveSession();enterLobby();
 }
-async function joinLobby(){
+async function joinLobby(code){
   const name=document.getElementById('player-name').value.trim();
-  const code=document.getElementById('join-code').value.trim().toUpperCase();
-  if(!name||!code){document.getElementById('home-err').textContent='Name und Code eingeben.';return}
+  code=(code||document.getElementById('join-code').value).trim().toUpperCase();
+  if(!name){document.getElementById('home-err').textContent='Bitte zuerst einen Namen eingeben.';return}
+  if(!code){document.getElementById('home-err').textContent='Code eingeben.';return}
   const d=await api('/api/lobby/join','POST',{name,game_id:code});
   if(d.error){document.getElementById('home-err').textContent=d.error;return}
-  gameId=d.game_id;playerId=d.player_id;isHost=false;enterLobby();
+  gameId=d.game_id;playerId=d.player_id;isHost=false;saveSession();enterLobby();
 }
 
-// LOBBY
+// ── Lobby ────────────────────────────────────────────────────────────────────
 function enterLobby(){
+  stopAll();
   document.getElementById('lobby-code').textContent=gameId;
   showScreen('lobby-screen');
-  if(isHost){
-    document.getElementById('add-bot-btn').style.display='inline-block';
-    document.getElementById('start-btn').style.display='inline-block';
-  }
   poll=setInterval(pollLobby,2000);pollLobby();
 }
 async function pollLobby(){
-  const d=await api(`/api/lobby/${gameId}`);
-  if(d.status==='playing'||d.status==='trading'){clearInterval(poll);enterGame();return}
-  const grid=document.getElementById('slot-grid');
-  grid.innerHTML='';
+  const d=await api('/api/lobby/'+gameId+'?player_id='+encodeURIComponent(playerId));
+  if(!d||d.error){kickedOut('Diese Lobby existiert nicht mehr.');return}
+  if(d.kicked){kickedOut('Du wurdest aus der Lobby gekickt.');return}
+  isHost=!!d.isHost;
+  if(d.settings){botDelayMs=d.settings.botDelayMs;document.getElementById('lobby-bot-delay').value=String(botDelayMs);}
+  if(d.status!=='lobby'){stopAll();enterGame();return}
+
+  const grid=document.getElementById('slot-grid');grid.innerHTML='';
   let humans=0,bots=0,empty=0;
   d.players.forEach((p,i)=>{
     const div=document.createElement('div');
-    if(!p){empty++;div.className='slot empty';div.innerHTML=`<span class="pip"></span><span>Platz ${i+1} – leer</span>`;}
+    if(!p){empty++;div.className='slot empty';div.innerHTML='<span class="pip"></span><span>Platz '+(i+1)+' – leer</span>';}
     else if(p.isBot){bots++;div.className='slot bot';
-      div.innerHTML=`<span class="pip" style="background:var(--accent)"></span><span>${p.name}</span><span class="tag">BOT</span>`
-        +(isHost&&i>0?`<button class="rm" onclick="removeBot(${i})">✕</button>`:'');}
+      div.innerHTML='<span class="pip" style="background:var(--accent)"></span><span>'+p.name+'</span><span class="tag">BOT</span>'
+        +(isHost?'<button class="rm" title="Bot entfernen" onclick="removeBot('+i+')">✕</button>':'');}
     else{humans++;div.className='slot';
-      div.innerHTML=`<span class="pip"></span><span>${p.name}${i===0?' <span style="color:var(--muted);font-size:.68rem">(Host)</span>':''}</span>`;}
+      div.innerHTML='<span class="pip"></span><span>'+p.name+(p.isHost?' <span style="color:var(--muted);font-size:.68rem">(Host)</span>':'')+'</span>'
+        +(isHost&&!p.isHost?'<button class="rm" title="Spieler kicken" style="margin-left:auto" onclick="kickPlayer('+i+',\''+p.name+'\')">Kicken</button>':'');}
     grid.appendChild(div);
   });
-  document.getElementById('lobby-status').textContent=`${humans} Mensch(en) · ${bots} Bot(s) · ${empty} leer`;
+  document.getElementById('lobby-status').textContent=humans+' Mensch(en) · '+bots+' Bot(s) · '+empty+' leer';
   document.getElementById('add-bot-btn').style.display=(isHost&&empty>0)?'inline-block':'none';
+  document.getElementById('start-btn').style.display=isHost?'inline-block':'none';
+  document.getElementById('lobby-host-panel').style.display=isHost?'block':'none';
 }
 async function addBot(){
-  const d=await api(`/api/lobby/${gameId}/bot`,'POST',{player_id:playerId});
+  const d=await api('/api/lobby/'+gameId+'/bot','POST',{player_id:playerId});
   if(d.error)alert(d.error);else pollLobby();
 }
 async function removeBot(idx){
-  await api(`/api/lobby/${gameId}/remove_bot`,'POST',{player_id:playerId,slot:idx});
+  await api('/api/lobby/'+gameId+'/remove_bot','POST',{player_id:playerId,slot:idx});
   pollLobby();
 }
 async function startGame(){
-  const d=await api(`/api/lobby/${gameId}/start`,'POST',{player_id:playerId});
+  const d=await api('/api/lobby/'+gameId+'/start','POST',{player_id:playerId});
   if(d.error){alert(d.error);return}
-  clearInterval(poll);enterGame();
+  stopAll();enterGame();
 }
 
-// GAME
+// ── (4) Host-Rechte ──────────────────────────────────────────────────────────
+async function kickPlayer(slot,name){
+  if(!confirm('"'+name+'" wirklich kicken?'))return;
+  const d=await api('/api/game/'+gameId+'/kick','POST',{player_id:playerId,slot});
+  if(d.error)alert(d.error);
+}
+async function setBotDelay(val){
+  const d=await api('/api/game/'+gameId+'/settings','POST',{player_id:playerId,botDelayMs:parseInt(val,10)});
+  if(d.error){alert(d.error);return}
+  botDelayMs=d.settings.botDelayMs;
+  document.getElementById('lobby-bot-delay').value=String(botDelayMs);
+  document.getElementById('game-bot-delay').value=String(botDelayMs);
+}
+
+// ── Game ─────────────────────────────────────────────────────────────────────
 function enterGame(){
-  showScreen('game-screen');
-  if(isHost)document.getElementById('bot-panel').style.display='block';
-  schedulePoll();pollGame();
+  stopAll();showScreen('game-screen');
+  lastStatus=null;shownBotSeq=-1;tradeKey=null;
+  schedulePoll(2000);pollGame();
 }
-
-function schedulePoll(){
-  clearInterval(poll);
-  // Poll every 1s when bots are active, 2s otherwise
-  poll=setInterval(pollGame, botPollFast ? 900 : 2000);
+function schedulePoll(ms){
+  if(pollMs===ms&&poll)return;
+  clearInterval(poll);pollMs=ms;poll=setInterval(pollGame,ms);
 }
-
 async function pollGame(){
-  const d=await api(`/api/game/${gameId}/state?player_id=${playerId}`);
-  if(!d||d.error)return;
-  myEntityID=d.myEntityID;
+  if(!gameId||!playerId)return;
+  const d=await api('/api/game/'+gameId+'/state?player_id='+encodeURIComponent(playerId));
+  if(!d)return;
+  if(d.error){kickedOut('Das Spiel existiert nicht mehr.');return}
+  if(d.kicked||d.myEntityID===null||d.myEntityID===undefined){kickedOut('Du wurdest aus der Runde gekickt.');return}
+  if(d.status==='lobby'){enterLobby();return}
 
-  // Adjust poll speed based on whether next move is a bot
-  const wasFast=botPollFast;
-  botPollFast = d.nextIsBot && !d.finished;
-  if(wasFast!==botPollFast) schedulePoll();
+  myEntityID=d.myEntityID;
+  isHost=!!d.isHost;
+  if(d.settings)botDelayMs=d.settings.botDelayMs;
+
+  // Schnelleres Polling nur solange ein Bot-Zug ansteht
+  schedulePoll(d.nextIsBot&&!d.finished?Math.max(250,Math.min(botDelayMs,900)):2000);
 
   renderGame(d);
-  if(d.finished && lastStatus!=='finished'){lastStatus='finished';showFinished(d.players,d.roundNumber);}
-  if(d.status==='trading' && lastStatus!=='trading'){lastStatus='trading';}
+
+  if(d.status==='finished'&&lastStatus!=='finished'){showFinished(d.players);}
+  if(d.status!=='finished'){document.getElementById('fin-overlay').classList.remove('active');}
   lastStatus=d.status;
 }
 
 function renderGame(d){
-  document.getElementById('round-banner').textContent=`Runde ${d.roundNumber||1}`;
+  document.getElementById('round-banner').textContent='Runde '+(d.roundNumber||1)+' · Lobby '+d.lobbyCode;
 
-  // Opponents – highlight active bot
-  const oDiv=document.getElementById('opponents');
-  oDiv.innerHTML='';
+  // Gegner
+  const oDiv=document.getElementById('opponents');oDiv.innerHTML='';
   d.players.forEach(p=>{
     if(p.entityID===myEntityID)return;
     const isActive=p.entityID===d.currentTurn && d.status==='playing';
     const el=document.createElement('div');
     el.className='opp'+(isActive?' cur':'');
-    // Show animated indicator if bot is currently playing
-    const botIndicator = (isActive && p.isBot)
-      ? `<div class="bot-thinking">⚙ spielt…</div>`
-      : '';
-    el.innerHTML=`<div class="oname">${p.name}${p.isBot?' 🤖':''}</div>
-      <div class="oinfo">🃏 ${p.cardCount} Karten</div>
-      ${p.rank?`<div class="orank">${p.rank}</div>`:''}
-      ${p.prevRank&&!p.rank?`<div class="oinfo">zuletzt: ${p.prevRank}</div>`:''}
-      ${botIndicator}`;
+    el.innerHTML='<div class="oname">'+p.name+(p.isBot?' 🤖':'')+(p.isHost?' 👑':'')+'</div>'+
+      '<div class="oinfo">🃏 '+p.cardCount+' Karten</div>'+
+      (p.rank?'<div class="orank">'+p.rank+'</div>':'')+
+      (p.prevRank&&!p.rank?'<div class="oinfo">zuletzt: '+p.prevRank+'</div>':'')+
+      ((isActive&&p.isBot)?'<div class="bot-thinking">⚙ spielt…</div>':'');
     oDiv.appendChild(el);
   });
 
-  // Pile
+  // Stapel
   const pile=document.getElementById('pile-cards');
-  pile.innerHTML=d.stack&&d.stack.length?d.stack.map(cc).join('')
+  pile.innerHTML=(d.stack&&d.stack.length)?d.stack.map(cc).join('')
     :'<span style="color:var(--muted);font-size:.8rem">Leer</span>';
 
-  // Bot move banner
+  // (3) Bot-Banner: nur bei NEUER seq neu rendern, genau ein Timer
   const bmb=document.getElementById('bot-move-banner');
-  if(d.lastBotMove && d.status==='playing'){
+  if(d.lastBotMove&&d.status==='playing'){
     const bm=d.lastBotMove;
-    if(bm.move==='pass'){
+    if(bm.seq!==shownBotSeq){
+      shownBotSeq=bm.seq;
+      bmb.innerHTML=(bm.move==='pass')
+        ? '🤖 '+bm.name+' hat gepasst'
+        : '🤖 '+bm.name+' legte: '+((bm.cards&&bm.cards.length)?bm.cards.map(cc).join(''):bm.move);
       bmb.style.display='block';
-      bmb.textContent=`🤖 ${bm.name} hat gepasst`;
-    } else {
-      bmb.style.display='block';
-      bmb.innerHTML=`🤖 ${bm.name} legte: ${bm.cards ? bm.cards.map(cc).join('') : bm.move}`;
+      clearTimeout(botBannerTimer);
+      botBannerTimer=setTimeout(()=>{bmb.style.display='none'},4000);
     }
-    // Fade out after 3s if it's now human's turn
-    if(!d.nextIsBot){
-      setTimeout(()=>{bmb.style.display='none';},3000);
-    }
-  } else if(!d.nextIsBot){
+  }else{
+    clearTimeout(botBannerTimer);
     bmb.style.display='none';
+    shownBotSeq=-1;
   }
 
-  // Turn banner
+  // Turn-Banner
   const tb=document.getElementById('turn-banner');
   if(d.status==='trading'){tb.innerHTML='<span>Trading-Phase</span>';}
+  else if(d.status==='finished'){tb.innerHTML='<span>Runde beendet</span>';}
   else if(d.currentTurn===myEntityID){tb.innerHTML='<span>Du bist dran!</span>';}
   else{
     const cur=d.players.find(p=>p.entityID===d.currentTurn);
-    const isBot=cur&&cur.isBot;
-    tb.innerHTML=isBot
-      ? `<span style="color:var(--accent)">🤖 ${cur?cur.name:'?'} denkt…</span>`
-      : `Zug von <span>${cur?cur.name:'?'}</span>`;
+    tb.innerHTML=(cur&&cur.isBot)
+      ? '<span style="color:var(--accent)">🤖 '+cur.name+' denkt…</span>'
+      : 'Zug von <span>'+(cur?cur.name:'?')+'</span>';
   }
 
   // Hand
   const me=d.players.find(p=>p.entityID===myEntityID);
   renderHand(me?me.hand:[]);
 
-  // Moves / Trade
+  // Züge / Trading
   const movesArea=document.getElementById('moves-area');
   const tradeArea=document.getElementById('trade-area');
-  if(d.status==='trading'){
-    movesArea.style.display='none';
-    if(d.myTrade&&!d.myTrade.done){
-      tradeArea.style.display='block';
-      renderTrade(d.myTrade,me?me.hand:[],d.players);
-    } else {
-      tradeArea.style.display='none';
-      movesArea.style.display='block';
-      document.getElementById('move-buttons').innerHTML='<span id="wait-msg">Warte auf Trading der anderen…</span>';
-    }
-  } else {
-    tradeArea.style.display='none';
-    movesArea.style.display='block';
+  if(d.status==='trading'&&d.myTrade&&d.tradeAction){
+    movesArea.style.display='none';tradeArea.style.display='block';
+    renderTrade(d,me?me.hand:[]);
+  }else{
+    tradeArea.style.display='none';movesArea.style.display='block';tradeKey=null;
     const mb=document.getElementById('move-buttons');mb.innerHTML='';
-    if(d.currentTurn===myEntityID&&d.myMoves&&d.myMoves.length){
+    if(d.status==='trading'){
+      mb.innerHTML='<span id="wait-msg">Warte auf Trading der anderen…</span>';
+    }else if(d.status==='playing'&&d.currentTurn===myEntityID&&d.myMoves&&d.myMoves.length){
       d.myMoves.forEach(mv=>{
         const b=document.createElement('button');
         b.className='mv'+(mv==='pass'?' pass':'');
@@ -432,88 +569,178 @@ function renderGame(d){
         b.onclick=()=>makeMove(mv);
         mb.appendChild(b);
       });
-    } else if(d.nextIsBot){
+    }else if(d.nextIsBot){
       mb.innerHTML='<span id="wait-msg">🤖 Bots spielen…</span>';
-    } else {
+    }else{
       mb.innerHTML='<span id="wait-msg">Warte auf anderen Spieler…</span>';
     }
   }
 
+  // Host-Panel
+  const hp=document.getElementById('host-panel');
+  hp.style.display=isHost?'block':'none';
+  if(isHost){
+    document.getElementById('game-bot-delay').value=String(botDelayMs);
+    document.getElementById('kick-list').innerHTML=d.players
+      .filter(p=>!p.isBot&&!p.isHost)
+      .map(p=>'<div class="kick-row"><span>'+p.name+'</span>'+
+        '<button onclick="kickPlayer('+p.entityID+',\''+p.name+'\')">Kicken</button></div>').join('')
+      ||'<div style="font-size:.72rem;color:var(--muted)">Keine kickbaren Spieler.</div>';
+  }
+
   // Log
   const le=document.getElementById('log-entries');
-  le.innerHTML=d.log.map(l=>`<p>${l}</p>`).join('');
+  le.innerHTML=d.log.map(l=>'<p>'+l+'</p>').join('');
   le.scrollTop=le.scrollHeight;
 }
 
-function renderTrade(trade,hand,players){
-  const target=players.find(p=>p.entityID===trade.to);
-  const dir=trade.direction==='give_best'?'beste':'schlechteste';
-  document.getElementById('trade-info').innerHTML=
-    `Gib deine ${trade.count} ${dir} Karte(n) an <b>${target?target.name:'?'}</b>.`;
-  const tc=document.getElementById('trade-cards');tc.innerHTML='';
-  selectedTrade=[];
-  const display=sortEnabled?[...hand].sort((a,b)=>cardVal(a)-cardVal(b)):hand;
-  display.forEach(c=>{
+async function makeMove(move){
+  const d=await api('/api/game/'+gameId+'/move','POST',{player_id:playerId,move});
+  if(d.error){alert(d.error);return}
+  await pollGame();
+}
+
+// ── Trading-UI ───────────────────────────────────────────────────────────────
+function renderTrade(d,hand){
+  const t=d.myTrade,act=d.tradeAction,partner=d.tradePartner;
+  const key=act+'|'+t.count+'|'+t.wish_rank+'|'+hand.join(',');
+  if(key===tradeKey)return;      // Auswahl beim Poll nicht zerstören
+  tradeKey=key;selectedTrade=[];selectedWish=null;
+  document.getElementById('trade-err').textContent='';
+
+  const wish=document.getElementById('trade-wish-step');
+  const give=document.getElementById('trade-give-step');
+  const ret =document.getElementById('trade-return-step');
+  wish.style.display=give.style.display=ret.style.display='none';
+  const pname=partner?partner.name:'?';
+
+  if(act==='wish'){
+    document.getElementById('trade-info').innerHTML=
+      'Du bist <b>'+t.pair+'</b>. Wünsche dir einen Rang von <b>'+pname+'</b> ('+t.count+' Karte(n)).';
+    wish.style.display='block';
+    const rk=document.getElementById('wish-ranks');rk.innerHTML='';
+    ["A","K","Q","J","T","9","8","7","6","5","4","3","2"].forEach(r=>{
+      const el=document.createElement('span');
+      el.className='rk';el.textContent=r;
+      el.onclick=()=>{
+        selectedWish=r;
+        [...rk.children].forEach(c=>c.classList.remove('selected'));
+        el.classList.add('selected');
+      };
+      rk.appendChild(el);
+    });
+  }
+  else if(act==='give'){
+    const owned=hand.filter(c=>c[0]===t.wish_rank).length;
+    const must=Math.min(owned,t.count);
+    document.getElementById('trade-info').innerHTML=
+      '<b>'+pname+'</b> wünscht sich <b>'+t.wish_rank+'</b>. Gib '+t.count+' Karte(n) ab.';
+    document.getElementById('give-info').textContent= must>0
+      ? 'Du musst '+must+' Karte(n) vom Rang '+t.wish_rank+' abgeben.'
+      : 'Du hast kein '+t.wish_rank+' – gib '+t.count+' Karte(n) deiner Wahl ab (am besten deine besten).';
+    give.style.display='block';
+    buildCardPicker('give-cards',hand,t.count);
+  }
+  else if(act==='return'){
+    document.getElementById('trade-info').innerHTML=
+      'Gib <b>'+t.count+'</b> Karte(n) an <b>'+pname+'</b> zurück.';
+    document.getElementById('return-info').textContent='Wähle deine schlechtesten Karten:';
+    ret.style.display='block';
+    buildCardPicker('return-cards',hand,t.count);
+  }
+}
+function buildCardPicker(containerId,hand,count){
+  const box=document.getElementById(containerId);box.innerHTML='';
+  sortedHand(hand).forEach((c,i)=>{
     const el=document.createElement('span');
     el.className='tc'+(suitRed(c)?' red':'');
     el.textContent=c;
     el.onclick=()=>{
-      if(selectedTrade.includes(c)){selectedTrade=selectedTrade.filter(x=>x!==c);el.classList.remove('selected');}
-      else if(selectedTrade.length<trade.count){selectedTrade.push(c);el.classList.add('selected');}
+      const idx=selectedTrade.indexOf(c);
+      if(idx>=0){selectedTrade.splice(idx,1);el.classList.remove('selected');}
+      else if(selectedTrade.length<count){selectedTrade.push(c);el.classList.add('selected');}
     };
-    tc.appendChild(el);
+    box.appendChild(el);
   });
 }
-
-async function makeMove(move){
-  const d=await api(`/api/game/${gameId}/move`,'POST',{player_id:playerId,move});
-  if(d.error){alert(d.error);return}
-  await pollGame();
-}
-async function submitTrade(){
-  if(!selectedTrade.length){document.getElementById('trade-err').textContent='Keine Karte ausgewählt.';return}
-  const d=await api(`/api/game/${gameId}/trade`,'POST',{player_id:playerId,cards:selectedTrade});
+async function submitWish(){
+  if(!selectedWish){document.getElementById('trade-err').textContent='Bitte einen Rang wählen.';return}
+  const d=await api('/api/game/'+gameId+'/trade/wish','POST',{player_id:playerId,wish_rank:selectedWish});
   if(d.error){document.getElementById('trade-err').textContent=d.error;return}
-  document.getElementById('trade-err').textContent='';
-  selectedTrade=[];await pollGame();
+  tradeKey=null;await pollGame();
+}
+async function submitGive(){
+  const d=await api('/api/game/'+gameId+'/trade/give','POST',{player_id:playerId,cards:selectedTrade});
+  if(d.error){document.getElementById('trade-err').textContent=d.error;return}
+  tradeKey=null;await pollGame();
+}
+async function submitReturn(){
+  const d=await api('/api/game/'+gameId+'/trade/return','POST',{player_id:playerId,cards:selectedTrade});
+  if(d.error){document.getElementById('trade-err').textContent=d.error;return}
+  tradeKey=null;await pollGame();
 }
 
-// FINISHED
-function showFinished(players,roundNum){
+// ── Rundenende ───────────────────────────────────────────────────────────────
+function showFinished(players){
   const order=["President","Vice-President","Citizen","Vice-Brokie","Brokie"];
   const ranked=players.filter(p=>p.rank).sort((a,b)=>order.indexOf(a.rank)-order.indexOf(b.rank));
   document.getElementById('fin-ranks').innerHTML=ranked.map(p=>
-    `<div class="rank-row"><span>${p.name}${p.isBot?' 🤖':''}</span><span class="rank-lbl">${p.rank}</span></div>`
+    '<div class="rank-row"><span>'+p.name+(p.isBot?' 🤖':'')+'</span><span class="rank-lbl">'+p.rank+'</span></div>'
   ).join('');
-  if(isHost)document.getElementById('next-round-btn').style.display='inline-block';
+  document.getElementById('next-round-btn').style.display=isHost?'inline-block':'none';
   document.getElementById('fin-overlay').classList.add('active');
 }
 async function nextRound(){
-  const d=await api(`/api/game/${gameId}/next_round`,'POST',{player_id:playerId});
+  const d=await api('/api/game/'+gameId+'/next_round','POST',{player_id:playerId});
   if(d.error){alert(d.error);return}
   document.getElementById('fin-overlay').classList.remove('active');
-  lastStatus=null;botPollFast=false;schedulePoll();await pollGame();
+  lastStatus=null;shownBotSeq=-1;tradeKey=null;
+  schedulePoll(2000);await pollGame();
 }
 
-// LOGS
-async function fetchLogs(){
+// ── (6) Logs ─────────────────────────────────────────────────────────────────
+function logQuery(){
   const pw=document.getElementById('log-pw').value.trim();
-  const d=await api(`/api/logs?password=${encodeURIComponent(pw)}`);
+  const f=document.getElementById('log-filter').value.trim().toUpperCase();
+  return {pw,f};
+}
+async function fetchLogs(){
+  const {pw,f}=logQuery();
+  const d=await api('/api/logs?password='+encodeURIComponent(pw));
   if(d.error){document.getElementById('log-err').textContent=d.error;return}
   document.getElementById('log-err').textContent='';
   const out=document.getElementById('log-output');
-  if(!d.logs.length){out.innerHTML='<p style="color:var(--muted)">Keine Einträge.</p>';return}
-  out.innerHTML=[...d.logs].reverse().map(rec=>{
+  let logs=d.logs.filter(r=>!f||(r.lobby_code||r.game_id)===f);
+  if(!logs.length){out.innerHTML='<p style="color:var(--muted)">Keine Einträge.</p>';return}
+  out.innerHTML=[...logs].reverse().map(rec=>{
+    const code=rec.lobby_code||rec.game_id;
     const moves=rec.moves.map(m=>
-      `<div class="move-line">R${m.round} T${m.trick} P${m.p}(${m.name}): ${m.move}${m.auto?' [auto]':''}</div>`
+      '<div class="move-line">['+code+'] R'+m.round+' T'+m.trick+' P'+m.p+'('+m.name+'): '+m.move+(m.auto?' [auto]':'')+'</div>'
     ).join('');
-    const plist=rec.players.map(p=>`${p.name}${p.bot?'🤖':''}→${p.rank||'?'}`).join(' | ');
-    return `<div class="game-entry">
-      <h4>${rec.ts.slice(0,19).replace('T',' ')} · Runde ${rec.round} · Spiel ${rec.game_id}</h4>
-      <div style="color:var(--text);margin-bottom:.3rem;font-size:.72rem">${plist}</div>
-      ${moves}</div>`;
+    const plist=rec.players.map(p=>{
+      const hand=(p.starter_hand&&p.starter_hand.length)?' ['+p.starter_hand.join(',')+']':'';
+      return p.name+(p.bot?'🤖':'')+'→'+(p.rank||'?')+'<span style="color:var(--muted);font-size:.65rem">'+hand+'</span>';
+    }).join(' | ');
+    return '<div class="game-entry">'+
+      '<h4>'+rec.ts.slice(0,19).replace('T',' ')+' · Runde '+rec.round+' · Lobby <span class="code-pill">'+code+'</span></h4>'+
+      '<div style="color:var(--text);margin-bottom:.3rem;font-size:.72rem">'+plist+'</div>'+moves+'</div>';
   }).join('');
 }
+function exportCsv(){
+  const {pw,f}=logQuery();
+  if(!pw){document.getElementById('log-err').textContent='Passwort eingeben.';return}
+  document.getElementById('log-err').textContent='';
+  let url='/api/logs.csv?password='+encodeURIComponent(pw);
+  if(f)url+='&lobby='+encodeURIComponent(f);
+  window.location.href=url;
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+(async function init(){
+  fillDelaySelects();
+  const restored=await restoreSession();
+  if(!restored){showScreen('home-screen');}
+})();
 </script>
 </body>
 </html>
