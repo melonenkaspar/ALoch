@@ -47,6 +47,8 @@ input[type=text]:focus{border-color:var(--accent)}
 .opp .oinfo{font-size:.68rem;color:var(--muted);margin-top:.15rem}
 .opp .orank{font-size:.65rem;color:var(--accent);font-family:'DM Mono',monospace;margin-top:.1rem}
 .opp.cur{border-color:var(--accent)}
+.bot-thinking{font-size:.68rem;color:var(--accent);font-family:'DM Mono',monospace;margin-top:.2rem;animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 #pile-area{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem;min-height:100px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.4rem}
 #pile-label{font-size:.68rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
 #pile-cards{display:flex;gap:.3rem;flex-wrap:wrap;justify-content:center}
@@ -221,6 +223,7 @@ input[type=text]:focus{border-color:var(--accent)}
 <script>
 let gameId=null,playerId=null,myEntityID=null,isHost=false;
 let poll=null,sortEnabled=true,lastHand=[],selectedTrade=[],lastStatus=null;
+let botPollFast=false;
 
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -316,43 +319,94 @@ async function startGame(){
 function enterGame(){
   showScreen('game-screen');
   if(isHost)document.getElementById('bot-panel').style.display='block';
-  poll=setInterval(pollGame,2000);pollGame();
+  schedulePoll();pollGame();
 }
+
+function schedulePoll(){
+  clearInterval(poll);
+  // Poll every 1s when bots are active, 2s otherwise
+  poll=setInterval(pollGame, botPollFast ? 900 : 2000);
+}
+
 async function pollGame(){
   const d=await api(`/api/game/${gameId}/state?player_id=${playerId}`);
   if(!d||d.error)return;
   myEntityID=d.myEntityID;
+
+  // Adjust poll speed based on whether next move is a bot
+  const wasFast=botPollFast;
+  botPollFast = d.nextIsBot && !d.finished;
+  if(wasFast!==botPollFast) schedulePoll();
+
   renderGame(d);
-  if(d.finished&&lastStatus!=='finished'){lastStatus='finished';showFinished(d.players,d.roundNumber);}
+  if(d.finished && lastStatus!=='finished'){lastStatus='finished';showFinished(d.players,d.roundNumber);}
+  if(d.status==='trading' && lastStatus!=='trading'){lastStatus='trading';}
   lastStatus=d.status;
 }
+
 function renderGame(d){
   document.getElementById('round-banner').textContent=`Runde ${d.roundNumber||1}`;
-  // Opponents
+
+  // Opponents – highlight active bot
   const oDiv=document.getElementById('opponents');
   oDiv.innerHTML='';
   d.players.forEach(p=>{
     if(p.entityID===myEntityID)return;
+    const isActive=p.entityID===d.currentTurn && d.status==='playing';
     const el=document.createElement('div');
-    el.className='opp'+(p.entityID===d.currentTurn?' cur':'');
+    el.className='opp'+(isActive?' cur':'');
+    // Show animated indicator if bot is currently playing
+    const botIndicator = (isActive && p.isBot)
+      ? `<div class="bot-thinking">⚙ spielt…</div>`
+      : '';
     el.innerHTML=`<div class="oname">${p.name}${p.isBot?' 🤖':''}</div>
       <div class="oinfo">🃏 ${p.cardCount} Karten</div>
       ${p.rank?`<div class="orank">${p.rank}</div>`:''}
-      ${p.prevRank?`<div class="oinfo">zuletzt: ${p.prevRank}</div>`:''}`;
+      ${p.prevRank&&!p.rank?`<div class="oinfo">zuletzt: ${p.prevRank}</div>`:''}
+      ${botIndicator}`;
     oDiv.appendChild(el);
   });
+
   // Pile
   const pile=document.getElementById('pile-cards');
   pile.innerHTML=d.stack&&d.stack.length?d.stack.map(cc).join('')
     :'<span style="color:var(--muted);font-size:.8rem">Leer</span>';
-  // Turn
+
+  // Bot move banner
+  const bmb=document.getElementById('bot-move-banner');
+  if(d.lastBotMove && d.status==='playing'){
+    const bm=d.lastBotMove;
+    if(bm.move==='pass'){
+      bmb.style.display='block';
+      bmb.textContent=`🤖 ${bm.name} hat gepasst`;
+    } else {
+      bmb.style.display='block';
+      bmb.innerHTML=`🤖 ${bm.name} legte: ${bm.cards ? bm.cards.map(cc).join('') : bm.move}`;
+    }
+    // Fade out after 3s if it's now human's turn
+    if(!d.nextIsBot){
+      setTimeout(()=>{bmb.style.display='none';},3000);
+    }
+  } else if(!d.nextIsBot){
+    bmb.style.display='none';
+  }
+
+  // Turn banner
   const tb=document.getElementById('turn-banner');
-  if(d.status==='trading')tb.innerHTML='<span>Trading-Phase</span>';
-  else if(d.currentTurn===myEntityID)tb.innerHTML='<span>Du bist dran!</span>';
-  else{const cur=d.players.find(p=>p.entityID===d.currentTurn);tb.innerHTML=`Zug von <span>${cur?cur.name:'?'}</span>`;}
+  if(d.status==='trading'){tb.innerHTML='<span>Trading-Phase</span>';}
+  else if(d.currentTurn===myEntityID){tb.innerHTML='<span>Du bist dran!</span>';}
+  else{
+    const cur=d.players.find(p=>p.entityID===d.currentTurn);
+    const isBot=cur&&cur.isBot;
+    tb.innerHTML=isBot
+      ? `<span style="color:var(--accent)">🤖 ${cur?cur.name:'?'} denkt…</span>`
+      : `Zug von <span>${cur?cur.name:'?'}</span>`;
+  }
+
   // Hand
   const me=d.players.find(p=>p.entityID===myEntityID);
   renderHand(me?me.hand:[]);
+
   // Moves / Trade
   const movesArea=document.getElementById('moves-area');
   const tradeArea=document.getElementById('trade-area');
@@ -378,22 +432,19 @@ function renderGame(d){
         b.onclick=()=>makeMove(mv);
         mb.appendChild(b);
       });
-    } else {mb.innerHTML='<span id="wait-msg">Warte auf anderen Spieler…</span>';}
+    } else if(d.nextIsBot){
+      mb.innerHTML='<span id="wait-msg">🤖 Bots spielen…</span>';
+    } else {
+      mb.innerHTML='<span id="wait-msg">Warte auf anderen Spieler…</span>';
+    }
   }
-  // Bot move banner
-  const bmb=document.getElementById('bot-move-banner');
-  if(d.lastBotMove&&d.status==='playing'){
-    const bm=d.lastBotMove;
-    bmb.style.display='block';
-    bmb.textContent=`🤖 ${bm.name} legte ${bm.move}`;
-  } else {
-    bmb.style.display='none';
-  }
+
   // Log
   const le=document.getElementById('log-entries');
   le.innerHTML=d.log.map(l=>`<p>${l}</p>`).join('');
   le.scrollTop=le.scrollHeight;
 }
+
 function renderTrade(trade,hand,players){
   const target=players.find(p=>p.entityID===trade.to);
   const dir=trade.direction==='give_best'?'beste':'schlechteste';
@@ -413,6 +464,7 @@ function renderTrade(trade,hand,players){
     tc.appendChild(el);
   });
 }
+
 async function makeMove(move){
   const d=await api(`/api/game/${gameId}/move`,'POST',{player_id:playerId,move});
   if(d.error){alert(d.error);return}
@@ -424,10 +476,6 @@ async function submitTrade(){
   if(d.error){document.getElementById('trade-err').textContent=d.error;return}
   document.getElementById('trade-err').textContent='';
   selectedTrade=[];await pollGame();
-}
-async function addBotMidgame(){
-  const d=await api(`/api/lobby/${gameId}/bot`,'POST',{player_id:playerId});
-  if(d.error)alert(d.error);
 }
 
 // FINISHED
@@ -444,7 +492,7 @@ async function nextRound(){
   const d=await api(`/api/game/${gameId}/next_round`,'POST',{player_id:playerId});
   if(d.error){alert(d.error);return}
   document.getElementById('fin-overlay').classList.remove('active');
-  lastStatus=null;await pollGame();
+  lastStatus=null;botPollFast=false;schedulePoll();await pollGame();
 }
 
 // LOGS
@@ -455,13 +503,13 @@ async function fetchLogs(){
   document.getElementById('log-err').textContent='';
   const out=document.getElementById('log-output');
   if(!d.logs.length){out.innerHTML='<p style="color:var(--muted)">Keine Einträge.</p>';return}
-  out.innerHTML=d.logs.map(rec=>{
+  out.innerHTML=[...d.logs].reverse().map(rec=>{
     const moves=rec.moves.map(m=>
       `<div class="move-line">R${m.round} T${m.trick} P${m.p}(${m.name}): ${m.move}${m.auto?' [auto]':''}</div>`
     ).join('');
     const plist=rec.players.map(p=>`${p.name}${p.bot?'🤖':''}→${p.rank||'?'}`).join(' | ');
     return `<div class="game-entry">
-      <h4>${rec.ts.slice(0,19).replace('T',' ')} · Runde ${rec.round} · ${rec.game_id}</h4>
+      <h4>${rec.ts.slice(0,19).replace('T',' ')} · Runde ${rec.round} · Spiel ${rec.game_id}</h4>
       <div style="color:var(--text);margin-bottom:.3rem;font-size:.72rem">${plist}</div>
       ${moves}</div>`;
   }).join('');
