@@ -876,7 +876,7 @@ def _spectator_view(gid: str, g: dict) -> dict:
         'status': g['status'], 'spectator': True, 'lobbyCode': gid,
         'roundNumber': s['roundNumber'], 'stack': s['stack'],
         'mostRecentMove': s['mostRecentMove'], 'currentTurn': s['currentTurn'],
-        'trickOrder': s['trickOrder'], 'citizenDeck': s['citizenDeck'],
+        'trickOrder': s['trickOrder'], 'citizenDeck': s['citizenDeck'], 'citizenStack': s['citizenDeck'],
         'players': [{'name': p['name'], 'entityID': p['entityID'], 'rank': p['rank'],
                      'prevRank': s['prevRanks'].get(str(p['entityID'])),
                      'cardCount': len(p['hand']), 'hand': p['hand'],
@@ -939,6 +939,14 @@ def get_state(gid):
             if citizen:
                 my_trade, trade_action = citizen, 'citizen_swap'
 
+    # Citizen-Stack: für den Citizen während seines Tauschs sichtbar,
+    # für alle sichtbar sobald das Trading vorbei ist.
+    citizen_stack = None
+    if trade_action == 'citizen_swap':
+        citizen_stack = list(s['citizenDeck'])
+    elif g['status'] in ('playing', 'finished'):
+        citizen_stack = list(s['citizenDeck'])
+
     return jsonify({
         'status':         g['status'],
         'lobbyCode':      gid,
@@ -962,6 +970,7 @@ def get_state(gid):
         'log':            s['log'][-18:],
         'finished':       s['finished'],
         'lastBotMove':    s.get('lastBotMove'),
+        'citizenStack':   citizen_stack,
         'nextIsBot':      'pendingBotMove' in g,
         'isHost':         is_host(g, player_id),
         'settings':       g['settings'],
@@ -1015,13 +1024,13 @@ def _trade_ctx(gid, finder, action_name):
     return (g, seat, trade, data), None, None
 
 
-def _check_cards(hand: list, cards: list, count: int):
+def _check_cards(hand: list, cards: list, count: int, where: str = 'in deiner Hand'):
     if len(cards) != count:
         return jsonify({'error': f'Bitte genau {count} Karte(n) wählen'}), 400
     pool = list(hand)
     for c in cards:
         if c not in pool:
-            return jsonify({'error': f'Karte {c} nicht in deiner Hand'}), 400
+            return jsonify({'error': f'Karte {c} nicht {where}'}), 400
         pool.remove(c)
     return None
 
@@ -1097,7 +1106,7 @@ def submit_return(gid):
 
 @app.route('/api/game/<gid>/trade/citizen_swap', methods=['POST'])
 def submit_citizen_swap(gid):
-    """Citizen tauscht 2 Handkarten gegen 2 zufällige Karten aus dem Citizen-Stack (optional)."""
+    """Citizen tauscht 1–2 frei gewählte Handkarten gegen ebenso viele frei gewählte Stack-Karten (optional)."""
     data = request.json or {}
     g = get_game(gid)
     if not g:
@@ -1117,12 +1126,20 @@ def submit_citizen_swap(gid):
         skipCitizenSwap(swap)
         s['log'].append(f'{s["players"][seat]["name"]} verzichtet auf den Citizen-Tausch.')
     else:
-        cards = data.get('cards') or []
-        bad = _check_cards(s['players'][seat]['hand'], cards, swap['count'])
+        give = data.get('give') or []
+        take = data.get('take') or []
+        if not (1 <= len(give) <= swap['maxCount']):
+            return jsonify({'error': f'Bitte 1 bis {swap["maxCount"]} eigene Karte(n) wählen'}), 400
+        if len(take) != len(give):
+            return jsonify({'error': 'Gib genauso viele Karten ab, wie du aus dem Stack nimmst'}), 400
+        bad = _check_cards(s['players'][seat]['hand'], give, len(give))
         if bad:
             return bad
-        resolveCitizenSwap(s['players'], s['citizenDeck'], swap, cards)
-        s['log'].append(f'{s["players"][seat]["name"]} tauscht {len(cards)} Karte(n) mit dem Citizen-Stack.')
+        bad = _check_cards(s['citizenDeck'], take, len(take), where='im Citizen-Stack')
+        if bad:
+            return bad
+        resolveCitizenSwap(s['players'], s['citizenDeck'], swap, give, take)
+        s['log'].append(f'{s["players"][seat]["name"]} tauscht {len(give)} Karte(n) mit dem Citizen-Stack.')
 
     if allTradesDone(s['trades'], swap):
         _finalize_trading(gid.upper(), g)
