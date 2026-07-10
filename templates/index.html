@@ -211,6 +211,10 @@ select{background:#111;border:1px solid var(--border);border-radius:4px;color:va
       <h3>Mögliche Züge</h3>
       <div id="move-buttons"></div>
     </div>
+    <div id="citizen-stack-box" class="box" style="display:none">
+      <h3>Citizen-Stack</h3>
+      <div id="citizen-stack-cards" class="tcards"></div>
+    </div>
     <div id="trade-area" class="box" style="display:none">
       <h3>Trading</h3>
       <div id="trade-info"></div>
@@ -230,8 +234,11 @@ select{background:#111;border:1px solid var(--border);border-radius:4px;color:va
         <button class="btn" onclick="submitReturn()">Zurückgeben bestätigen</button>
       </div>
       <div id="trade-citizen-step" style="display:none">
-        <div class="hint" style="margin-bottom:.5rem">Wähle 2 Karten, die du gegen den Citizen-Stack tauschen willst (optional):</div>
-        <div id="citizen-cards" class="tcards"></div>
+        <div class="hint" style="margin-bottom:.5rem">Wähle 1–2 Karten, die du abgeben willst:</div>
+        <div id="citizen-give-cards" class="tcards"></div>
+        <div class="hint" style="margin-bottom:.5rem">Wähle genauso viele Karten aus dem Citizen-Stack:</div>
+        <div id="citizen-take-cards" class="tcards"></div>
+        <div id="citizen-count-hint" class="hint"></div>
         <div class="btn-row">
           <button class="btn" onclick="submitCitizenSwap()">Tauschen</button>
           <button class="btn sec" onclick="skipCitizenSwapUI()">Überspringen</button>
@@ -323,7 +330,7 @@ const S = {
   poll:null, pollMs:0, lobbyPoll:null,
   netFails:0, lastHand:[], lastStatus:null,
   botDelayMs:900, shownBotSeq:-1, botTimer:null,
-  selCards:[], selWish:null, tradeKey:null,
+  selCards:[], selGive:[], selTake:[], selWish:null, tradeKey:null,
 };
 
 /* ── Speicher: localStorage → sessionStorage → RAM ─────────────────────────
@@ -750,6 +757,15 @@ function renderGame(d){
   const me = d.players.find(p=>p.entityID===S.myEntityID);
   if(!S.spectator) renderHand(me ? me.hand : []);
 
+  // Citizen-Stack: nach dem Trading für alle sichtbar
+  const csBox = $('citizen-stack-box');
+  if(d.citizenStack && d.citizenStack.length && d.status !== 'trading'){
+    csBox.style.display = 'block';
+    $('citizen-stack-cards').innerHTML = d.citizenStack.map(cc).join('');
+  } else {
+    csBox.style.display = 'none';
+  }
+
   // Züge / Trading
   const movesArea = $('moves-area'), tradeArea = $('trade-area');
   if(S.spectator){
@@ -804,16 +820,19 @@ async function makeMove(move){
 /* ── Trading-UI ────────────────────────────────────────────────────────────*/
 function renderTrade(d, hand){
   const t = d.myTrade, act = d.tradeAction, partner = d.tradePartner ? d.tradePartner.name : '?';
-  const key = [act, t.count, t.wish_rank, hand.join(',')].join('|');
+  const stack = d.citizenStack || [];
+  const key = [act, t.count, t.maxCount, t.wish_rank, hand.join(','), stack.join(',')].join('|');
   if(key === S.tradeKey) return;         // Auswahl beim Poll nicht zerstören
-  S.tradeKey = key; S.selCards = []; S.selWish = null;
+  S.tradeKey = key; S.selCards = []; S.selGive = []; S.selTake = []; S.selWish = null;
   $('trade-err').textContent = '';
   ['trade-wish-step','trade-give-step','trade-return-step','trade-citizen-step'].forEach(i=>$(i).style.display='none');
 
   if(act === 'citizen_swap'){
-    $('trade-info').innerHTML = 'Du bist <b>Citizen</b>. Du darfst 2 Karten mit dem Citizen-Stack tauschen – musst aber nicht.';
+    $('trade-info').innerHTML = 'Du bist <b>Citizen</b>. Du darfst 1–2 Karten mit dem Citizen-Stack tauschen – musst aber nicht.';
     $('trade-citizen-step').style.display = 'block';
-    buildPicker('citizen-cards', hand, t.count);
+    buildPicker('citizen-give-cards', hand, t.maxCount, S.selGive, updateCitizenHint);
+    buildPicker('citizen-take-cards', stack, t.maxCount, S.selTake, updateCitizenHint);
+    updateCitizenHint();
   } else if(act === 'wish'){
     $('trade-info').innerHTML = 'Du bist <b>'+t.pair+'</b>. Wünsche dir einen Rang von <b>'+esc(partner)+'</b> ('+t.count+' Karte(n)).';
     $('trade-wish-step').style.display = 'block';
@@ -831,23 +850,29 @@ function renderTrade(d, hand){
       ? 'Du musst '+must+' Karte(n) vom Rang '+t.wish_rank+' abgeben.'
       : 'Du hast kein '+t.wish_rank+' – gib '+t.count+' Karte(n) deiner Wahl ab.';
     $('trade-give-step').style.display = 'block';
-    buildPicker('give-cards', hand, t.count);
+    buildPicker('give-cards', hand, t.count, S.selCards);
   } else {
     $('trade-info').innerHTML = 'Gib <b>'+t.count+'</b> Karte(n) an <b>'+esc(partner)+'</b> zurück.';
     $('trade-return-step').style.display = 'block';
-    buildPicker('return-cards', hand, t.count);
+    buildPicker('return-cards', hand, t.count, S.selCards);
   }
 }
-function buildPicker(id, hand, count){
+function updateCitizenHint(){
+  $('citizen-count-hint').textContent =
+    (S.selGive.length || S.selTake.length) ? S.selGive.length+' abgeben ↔ '+S.selTake.length+' nehmen' : '';
+}
+/* Generischer Kartenwähler: klickt in `sel` rein/raus, max `count` Karten. */
+function buildPicker(id, cards, count, sel, onChange){
   const box = $(id); box.innerHTML='';
-  sortedHand(hand).forEach(c=>{
+  sortedHand(cards).forEach(c=>{
     const el = document.createElement('span');
     el.className = 'tc' + (suitRed(c)?' red':'');
     el.textContent = c;
     el.onclick = ()=>{
-      const i = S.selCards.indexOf(c);
-      if(i >= 0){ S.selCards.splice(i,1); el.classList.remove('selected'); }
-      else if(S.selCards.length < count){ S.selCards.push(c); el.classList.add('selected'); }
+      const i = sel.indexOf(c);
+      if(i >= 0){ sel.splice(i,1); el.classList.remove('selected'); }
+      else if(sel.length < count){ sel.push(c); el.classList.add('selected'); }
+      if(onChange) onChange();
     };
     box.appendChild(el);
   });
@@ -865,8 +890,9 @@ function submitWish(){
 const submitGive   = () => tradeStep('give',   {cards:S.selCards});
 const submitReturn = () => tradeStep('return', {cards:S.selCards});
 function submitCitizenSwap(){
-  if(S.selCards.length !== 2){ $('trade-err').textContent='Bitte genau 2 Karten wählen.'; return; }
-  tradeStep('citizen_swap', {cards:S.selCards});
+  if(S.selGive.length < 1){ $('trade-err').textContent='Bitte mindestens 1 eigene Karte wählen.'; return; }
+  if(S.selGive.length !== S.selTake.length){ $('trade-err').textContent='Wähle genauso viele Karten aus dem Stack wie du abgibst.'; return; }
+  tradeStep('citizen_swap', {give:S.selGive, take:S.selTake});
 }
 const skipCitizenSwapUI = () => tradeStep('citizen_swap', {skip:true});
 
