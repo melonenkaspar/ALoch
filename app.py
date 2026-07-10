@@ -1,306 +1,376 @@
 # ─── app.py ───────────────────────────────────────────────────────────────────
-import os, uuid, random, json, time, csv, io
+"""
+Arschloch – Flask-Backend.
+
+Aufbau:
+  1. Persistenz      – laufende Spiele überleben einen Server-Neustart
+  2. Game-Helfer     – Sitzplätze, Host, Bots
+  3. Engine          – _do_move / _settle / _tick_bots
+  4. Runden & Trading
+  5. Routen          – Lobby, Spiel, Rejoin, Admin, Logs
+"""
+
+import csv
+import io
+import json
+import os
+import random
+import time
+import uuid
 from datetime import datetime, timezone
-from flask import Flask, jsonify, request, Response
+from typing import Optional
+
+from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 
-from SimulatorConfig import gameRanks, LOG_PASSWORD, rankOrder, DEFAULT_BOT_DELAY_MS
+from SimulatorConfig import (
+    ADMIN_PASSWORD, DEFAULT_BOT_DELAY_MS, GAME_TTL_S, LOG_FILE,
+    MAX_BOT_DELAY_MS, STATE_FILE, gameEntities, gameRanks, rankOrder,
+)
 from SimulatorFunctions import (
-    createDeck, shuffleDeck, dealHands, createEntities,
-    possibleMoves, onlyPassAvailable, play, sortHand,
-    buildTrades, pendingWishFor, pendingGiveFor, pendingReturnFor,
-    allTradesDone, autoBotTrade, resolveReturn, getRank, randomMove,
-    _appendMoveLog
+    allTradesDone, appendMoveLog, autoBotTrade, buildTrades, createDeck,
+    createEntities, dealHands, getRank, onlyPassAvailable, pendingGiveFor,
+    pendingReturnFor, pendingWishFor, play, possibleMoves, randomMove,
+    requiredWishCards, resolveReturn, shuffleDeck, sortHand,
 )
 
 app = Flask(__name__)
-app.secret_key = 'arschloch-secret-2024'
 CORS(app)
 
-games     = {}   # game_id (= Lobby-Code) → game dict
-game_logs = []   # In-Memory-Log, zusaetzlich als Datei
-LOG_FILE  = '/tmp/game_logs.jsonl'
-
 BOT_NAMES = ["Bot-Ada", "Bot-Turing", "Bot-Grace", "Bot-Knuth", "Bot-Lovelace"]
+LIVE_STATUSES = ('lobby', 'playing', 'trading', 'finished')
+
+games: dict = {}      # lobby_code → game
+game_logs: list = []  # Rundenlogs im RAM (+ LOG_FILE als Backup)
 
 
-# ══ Logging ══════════════════════════════════════════════════════════════════
+# ══ 1. Persistenz ════════════════════════════════════════════════════════════
+# Ohne das verliert man bei jedem Render-Neustart alle laufenden Runden –
+# und genau das fühlt sich für Spieler wie "beim Refresh rausgeflogen" an.
 
-def save_round_log(game_id, g):
-    s = g.get('state')
-    if not s:
+_dirty = False
+_last_persist = 0.0
+
+
+def touch(g: Optional[dict] = None) -> None:
+    """Spiel als verändert markieren (wird nach dem Request gespeichert)."""
+    global _dirty
+    if g is not None:
+        g['touched'] = time.time()
+    _dirty = True
+
+
+def persist(force: bool = False) -> None:
+    global _dirty, _last_persist
+    if not _dirty and not force:
         return
-    record = {
-        "ts":         datetime.now(timezone.utc).isoformat(),
-        "lobby_code": game_id,          # ← explizit, um Games zuzuordnen
-        "game_id":    game_id,
-        "round":      s.get('roundNumber', 1),
-        "players": [{
-            "id":           p["entityID"],
-            "name":         p["name"],
-            "bot":          p.get("isBot", False),
-            "rank":         p["rank"],
-            "starter_hand": p.get("starterHand", []),
-        } for p in s['players']],
-        "moves": s.get('moveLog', []),
-    }
-    game_logs.append(record)
+    now = time.time()
+    if not force and now - _last_persist < 1.0:
+        return
     try:
-        with open(LOG_FILE, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(record, ensure_ascii=False) + '\n')
-    except Exception as e:
-        print(f"Log write error: {e}")
+        tmp = STATE_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump({'games': games}, f, ensure_ascii=False)
+        os.replace(tmp, STATE_FILE)
+        _last_persist, _dirty = now, False
+    except Exception as e:  # pragma: no cover
+        print(f"[persist] {e}")
 
 
-def _all_log_records():
-    records  = list(game_logs)
-    seen     = {(r.get('game_id'), r.get('round')) for r in records}
+def load_state() -> None:
     try:
-        with open(LOG_FILE, 'r', encoding='utf-8') as f:
-            extra = []
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                rec = json.loads(line)
-                key = (rec.get('game_id'), rec.get('round'))
-                if key not in seen:
-                    extra.append(rec)
-                    seen.add(key)
-            records = extra + records
-    except FileNotFoundError:
-        pass
-    return sorted(records, key=lambda r: r.get('ts', ''))
+        with open(STATE_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return
+    for gid, g in (data.get('games') or {}).items():
+        g.pop('pendingBotMove', None)   # Timer nach Neustart wertlos
+        games[gid] = g
+    for gid, g in list(games.items()):
+        if g.get('status') == 'playing':
+            _settle(gid, g)             # Bots ggf. wieder in Gang bringen
+    print(f"[state] {len(games)} Spiele wiederhergestellt")
 
 
-# ══ Helpers ══════════════════════════════════════════════════════════════════
+def cleanup_games() -> None:
+    now = time.time()
+    for gid, g in list(games.items()):
+        if now - g.get('touched', g.get('created', now)) > GAME_TTL_S:
+            games.pop(gid, None)
+            touch()
 
-def _make_bot_slot(entity_id):
-    return {"id": f"bot-{entity_id}", "name": BOT_NAMES[entity_id % len(BOT_NAMES)],
+
+@app.after_request
+def _after(resp):
+    persist()
+    return resp
+
+
+@app.errorhandler(Exception)
+def _on_error(e):  # pragma: no cover
+    code = getattr(e, 'code', 500)
+    if code == 404:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    app.logger.exception(e)
+    return jsonify({'error': 'Serverfehler'}), 500
+
+
+# ══ 2. Game-Helfer ═══════════════════════════════════════════════════════════
+
+def bot_slot(entity_id: int) -> dict:
+    return {"id": f"bot-{entity_id}-{uuid.uuid4().hex[:4]}",
+            "name": BOT_NAMES[entity_id % len(BOT_NAMES)],
             "entityID": entity_id, "isBot": True}
 
 
-def _is_host(g, player_id):
+def get_game(gid: str) -> Optional[dict]:
+    return games.get((gid or '').strip().upper())
+
+
+def is_admin(value: Optional[str]) -> bool:
+    return (value or '') == ADMIN_PASSWORD
+
+
+def is_host(g: dict, player_id: Optional[str]) -> bool:
     return bool(player_id) and g.get('host') == player_id
 
 
-def _entity_of(g, player_id):
-    return next((p['entityID'] for p in g['players'] if p and p.get('id') == player_id), None)
+def seat_of(g: dict, player_id: Optional[str]) -> Optional[int]:
+    if not player_id:
+        return None
+    return next((p['entityID'] for p in g['players']
+                 if p and p.get('id') == player_id), None)
 
 
-def _bot_delay(g):
+def humans(g: dict) -> list:
+    return [p for p in g['players'] if p and not p.get('isBot')]
+
+
+def ensure_host(g: dict) -> None:
+    """Host verlassen? Dann übernimmt der erste verbliebene Mensch."""
+    if any(p.get('id') == g['host'] for p in humans(g)):
+        return
+    remaining = humans(g)
+    g['host'] = remaining[0]['id'] if remaining else None
+
+
+def bot_delay_ms(g: dict) -> int:
     return int(g.get('settings', {}).get('botDelayMs', DEFAULT_BOT_DELAY_MS))
 
 
-# ══ Kern: ein Zug ════════════════════════════════════════════════════════════
+def vacate(g: dict, slot: int, reason: str) -> None:
+    """Menschen-Sitz verlassen: im Spiel übernimmt ein Bot, Platz bleibt reserviert."""
+    old = g['players'][slot]
+    if not old or old.get('isBot'):
+        return
+    if g['status'] != 'lobby':
+        # Sitzplatz für Rückkehr reservieren (gleiche player_id ⇒ gleicher Platz, Host bleibt Host)
+        g.setdefault('vacated', {})[old['id']] = {'slot': slot, 'name': old['name']}
+        g['players'][slot] = bot_slot(slot)
+        if g.get('state'):
+            g['state']['players'][slot]['isBot'] = True
+            g['state']['players'][slot]['name'] = g['players'][slot]['name']
+            g['state']['log'].append(f'{old["name"]} {reason} – ein Bot übernimmt.')
+    else:
+        g['players'][slot] = None
+    ensure_host(g)
 
-def _do_move(game_id, g, eid, move, auto=False):
-    """Fuehrt genau einen Zug aus (Mensch oder Bot) und ruecken den Turn weiter."""
+
+# ══ 3. Engine ════════════════════════════════════════════════════════════════
+
+def _do_move(gid: str, g: dict, eid: int, move: str, auto: bool = False) -> None:
+    """Führt genau einen Zug aus (Mensch oder Bot) und rückt den Turn weiter."""
     s      = g['state']
     p      = s['players'][eid]
-    name   = p['name']
     is_bot = p.get('isBot', False)
-    pref   = '🤖 ' if is_bot else ''
+    prefix = '🤖 ' if is_bot else ''
 
-    # Nur ein *bewusster* Menschenzug loescht das Bot-Banner.
+    # Kontext VOR dem Zug einfangen – landet so im CSV-Export
+    ctx = dict(legal=possibleMoves(s['players'], eid, s['mostRecentMove']),
+               hand=list(p['hand']),
+               order=list(s['trickOrder']),
+               citizen=list(s['citizenDeck']))
+
+    # Nur ein *bewusster* Menschenzug löscht das Bot-Banner.
     if not is_bot and not auto:
         s['lastBotMove'] = None
 
     if move == 'pass':
-        s['log'].append(f'{pref}{name} passt{" automatisch" if auto else ""}.')
-        _appendMoveLog(s, eid, name, 'pass', auto=auto)
+        s['log'].append(f'{prefix}{p["name"]} passt{" automatisch" if auto else ""}.')
+        appendMoveLog(s, eid, p['name'], 'pass', auto=auto, **ctx)
         s['passedCounter'] += 1
         if is_bot:
-            s['botMoveSeq'] += 1
-            s['lastBotMove'] = {'seq': s['botMoveSeq'], 'name': name,
-                                'move': 'pass', 'cards': []}
+            _set_bot_banner(s, p['name'], 'pass', [])
     else:
-        before = len(s['stack'])
-        play(s['players'], eid, s['stack'], move)
+        cards = play(s['players'], eid, s['stack'], move)
         p['hand'] = sortHand(p['hand'])
-        cards = list(s['stack'][before:])
-
         s['mostRecentMove'] = move
         s['passedCounter']  = 0
-        s['trickCounter']   = s.get('trickCounter', 0) + 1
-        s['log'].append(f'{pref}{name} spielt {move}.')
-        _appendMoveLog(s, eid, name, move)
+        s['trickCounter']  += 1
+        s['log'].append(f'{prefix}{p["name"]} spielt {move}.')
+        appendMoveLog(s, eid, p['name'], move, **ctx)
         if is_bot:
-            s['botMoveSeq'] += 1
-            s['lastBotMove'] = {'seq': s['botMoveSeq'], 'name': name,
-                                'move': move, 'cards': cards}
+            _set_bot_banner(s, p['name'], move, cards)
 
         if not p['hand']:
-            _assign_rank(game_id, g, eid, move)
+            _assign_rank(gid, g, eid, move)
             return
 
-    _after_action(g, eid)
+    _advance_turn(g, eid)
 
 
-def _after_action(g, eid):
-    """Trick-Reset pruefen bzw. Turn weiterruecken."""
-    s          = g['state']
-    trickOrder = s['trickOrder']
-    if not trickOrder:
+def _set_bot_banner(s: dict, name: str, move: str, cards: list) -> None:
+    """Monoton steigende seq ⇒ das Frontend rendert das Banner genau einmal."""
+    s['botMoveSeq'] += 1
+    s['lastBotMove'] = {'seq': s['botMoveSeq'], 'name': name, 'move': move, 'cards': cards}
+
+
+def _advance_turn(g: dict, eid: int) -> None:
+    s = g['state']
+    order = s['trickOrder']
+    if not order:
         return
-    active = len(trickOrder)
-    if s['passedCounter'] >= active:
-        _reset_trick(s, eid, trickOrder)
+    if s['passedCounter'] >= len(order):
+        _reset_trick(s, eid)
         return
-    if eid in trickOrder:
-        idx = trickOrder.index(eid)
-        s['currentTurn'] = trickOrder[(idx + 1) % len(trickOrder)]
-    else:
-        s['currentTurn'] = trickOrder[0]
+    idx = order.index(eid) if eid in order else -1
+    s['currentTurn'] = order[(idx + 1) % len(order)]
 
 
-def _reset_trick(s, trigger, trickOrder):
+def _reset_trick(s: dict, trigger: int) -> None:
+    order = s['trickOrder']
     s['log'].append('Alle gepasst – neuer Stich.')
     s['passedCounter'] = 0
     s['discardStack'].extend(s['stack'])
     s['stack'].clear()
     s['mostRecentMove'] = None
-    cur_idx   = trickOrder.index(trigger) if trigger in trickOrder else 0
-    new_order = [trickOrder[(cur_idx + i) % len(trickOrder)] for i in range(len(trickOrder))]
+    start = order.index(trigger) if trigger in order else 0
+    new_order = order[start:] + order[:start]
     s['trickOrder']     = new_order
     s['nextTrickOrder'] = new_order[:]
     s['currentTurn']    = new_order[0]
 
 
-def _assign_rank(game_id, g, eid, move):
-    s          = g['state']
-    remaining  = s['remainingRanks']
-    trickOrder = s['trickOrder']
-    name       = s['players'][eid]['name']
+def _assign_rank(gid: str, g: dict, eid: int, move: str) -> None:
+    s, remaining, order = g['state'], g['state']['remainingRanks'], g['state']['trickOrder']
     if not remaining:
         return
 
-    # Mit Ass rausgehen = schlechtester noch freier Rang
+    # Mit einem Ass rausgehen ⇒ schlechtester noch freier Rang
     rank = remaining.pop() if getRank(move) == 'A' else remaining.pop(0)
     s['players'][eid]['rank'] = rank
-    s['log'].append(f'{name} fertig → {rank}!')
+    s['log'].append(f'{s["players"][eid]["name"]} fertig → {rank}!')
 
-    idx = trickOrder.index(eid) if eid in trickOrder else 0
-    if eid in trickOrder:
-        trickOrder.remove(eid)
-    if eid in s.get('nextTrickOrder', []):
+    idx = order.index(eid) if eid in order else 0
+    if eid in order:
+        order.remove(eid)
+    if eid in s['nextTrickOrder']:
         s['nextTrickOrder'].remove(eid)
 
-    # Nur noch einer (oder keiner) uebrig → Runde vorbei
-    if len(trickOrder) <= 1:
-        if trickOrder and remaining:
-            last = trickOrder[0]
+    if len(order) <= 1:                       # nur noch einer übrig ⇒ Runde vorbei
+        if order and remaining:
+            last = order[0]
             s['players'][last]['rank'] = remaining.pop(0)
             s['log'].append(f'{s["players"][last]["name"]} letzter → {s["players"][last]["rank"]}!')
-        _end_round(game_id, g)
+        _end_round(gid, g)
         return
 
-    s['currentTurn'] = trickOrder[idx % len(trickOrder)]
+    s['currentTurn'] = order[idx % len(order)]
 
 
-def _end_round(game_id, g):
+def _end_round(gid: str, g: dict) -> None:
     s = g['state']
     s['finished'] = True
     s['log'].append('🎉 Runde beendet!')
     g['status'] = 'finished'
     g.pop('pendingBotMove', None)
-    g['lastRanks'] = {p['entityID']: p['rank'] for p in s['players']}
-    save_round_log(game_id, g)
+    g['lastRanks'] = {str(p['entityID']): p['rank'] for p in s['players']}
+    save_round_log(gid, g)
 
 
-# ══ Settle-Loop: Auto-Pass + Bot-Zuege ═══════════════════════════════════════
-
-def _do_bot_move(game_id, g, eid):
-    s     = g['state']
-    moves = possibleMoves(s['players'], eid, s['mostRecentMove'])
-    _do_move(game_id, g, eid, randomMove(moves))
+def _bot_turn(gid: str, g: dict, eid: int) -> None:
+    s = g['state']
+    _do_move(gid, g, eid, randomMove(possibleMoves(s['players'], eid, s['mostRecentMove'])))
 
 
-def _settle(game_id, g):
+def _settle(gid: str, g: dict) -> None:
     """
-    Bringt das Spiel in einen Zustand, in dem ein Mensch mit echten Zuegen dran ist.
-    - Menschen, die nur passen koennen, passen automatisch (auch nach Bot-Zuegen!)
-    - Bots ziehen sofort (botDelayMs == 0) oder werden fuer den naechsten Poll gequeued.
+    Bringt das Spiel in einen Zustand, in dem ein Mensch mit echten Zügen dran ist.
+      • Mensch, der nur passen kann → Auto-Pass (greift auch direkt nach Bot-Zügen)
+      • Bot + botDelayMs == 0       → Zug sofort
+      • Bot + botDelayMs > 0        → für den nächsten Poll vormerken
     """
-    for _ in range(300):
-        if g['status'] != 'playing':
+    for _ in range(400):
+        if g['status'] != 'playing' or g['state']['finished'] or not g['state']['trickOrder']:
             g.pop('pendingBotMove', None)
             return
         s = g['state']
-        if s['finished'] or not s['trickOrder']:
-            g.pop('pendingBotMove', None)
-            return
-
         cur = s['currentTurn']
         if cur not in s['trickOrder']:
             s['currentTurn'] = s['trickOrder'][0]
             continue
 
         if s['players'][cur].get('isBot'):
-            delay = _bot_delay(g)
+            delay = bot_delay_ms(g)
             if delay > 0:
-                g['pendingBotMove'] = {'eid': cur, 'ready_at': time.monotonic() + delay / 1000.0}
+                g['pendingBotMove'] = {'eid': cur, 'ready_at': time.time() + delay / 1000.0}
                 return
             g.pop('pendingBotMove', None)
-            _do_bot_move(game_id, g, cur)
+            _bot_turn(gid, g, cur)
             continue
 
-        # Mensch
         if onlyPassAvailable(s['players'], cur, s['mostRecentMove']):
-            _do_move(game_id, g, cur, 'pass', auto=True)
+            _do_move(gid, g, cur, 'pass', auto=True)
             continue
 
         g.pop('pendingBotMove', None)
         return
 
 
-def _tick_bots(game_id, g):
-    """Wird bei jedem State-Poll aufgerufen: faelligen Bot-Zug ausfuehren."""
+def _tick_bots(gid: str, g: dict) -> None:
+    """Bei jedem State-Poll: einen fälligen Bot-Zug ausführen (zeitbasiert, nicht poll-basiert)."""
     pending = g.get('pendingBotMove')
-    if not pending or time.monotonic() < pending['ready_at']:
+    if not pending or time.time() < pending['ready_at']:
         return
     g.pop('pendingBotMove', None)
-    s   = g['state']
-    eid = pending['eid']
-    if (g['status'] != 'playing' or s['finished']
-            or s['currentTurn'] != eid or not s['players'][eid].get('isBot')):
-        _settle(game_id, g)
-        return
-    _do_bot_move(game_id, g, eid)
-    _settle(game_id, g)
+    s, eid = g['state'], pending['eid']
+    if (g['status'] == 'playing' and not s['finished']
+            and s['currentTurn'] == eid and s['players'][eid].get('isBot')):
+        _bot_turn(gid, g, eid)
+    _settle(gid, g)
+    touch(g)
 
 
-# ══ Runde initialisieren ═════════════════════════════════════════════════════
+# ══ 4. Runden & Trading ══════════════════════════════════════════════════════
 
-def _init_round(game_id, g, round_number):
-    names   = [p['name'] for p in g['players']]
-    players = createEntities(names)
-    for i, p in enumerate(g['players']):
-        players[i]['isBot'] = p.get('isBot', False)
+def _init_round(gid: str, g: dict, round_number: int) -> None:
+    players = createEntities([p['name'] for p in g['players']])
+    for i, slot in enumerate(g['players']):
+        players[i]['isBot'] = slot.get('isBot', False)
 
-    citizenDeck, stack, discardStack = [], [], []
+    citizenDeck: list = []
     deck = createDeck()
     shuffleDeck(deck)
     dealHands(deck, players, citizenDeck)
     for p in players:
         p['hand'] = sortHand(p['hand'])
-        p['starterHand'] = list(p['hand'])   # Snapshot fuer die Logs
+        p['starterHand'] = list(p['hand'])
 
-    trickOrder = list(range(5))
-    random.shuffle(trickOrder)
-    prev_ranks = g.get('lastRanks', {})
+    order = list(range(gameEntities))
+    random.shuffle(order)
+    prev_ranks = g.get('lastRanks') or {}
 
     g['state'] = {
         'players':        players,
         'citizenDeck':    citizenDeck,
-        'stack':          stack,
-        'discardStack':   discardStack,
-        'trickOrder':     trickOrder,
-        'nextTrickOrder': trickOrder[:],
+        'stack':          [],
+        'discardStack':   [],
+        'trickOrder':     order,
+        'nextTrickOrder': order[:],
         'mostRecentMove': None,
         'passedCounter':  0,
-        'remainingRanks': gameRanks[:5],
-        'currentTurn':    trickOrder[0],
+        'remainingRanks': gameRanks[:gameEntities],
+        'currentTurn':    order[0],
         'log':            [f'Runde {round_number} gestartet!'],
         'finished':       False,
         'roundNumber':    round_number,
@@ -315,97 +385,153 @@ def _init_round(game_id, g, round_number):
 
     if prev_ranks:
         for p in players:
-            p['rank'] = prev_ranks.get(p['entityID'])
-        g['state']['trades'] = buildTrades(players, gameRanks)
+            p['rank'] = prev_ranks.get(str(p['entityID']))
+        g['state']['trades'] = buildTrades(players)
         g['state']['log']    = [f'Runde {round_number} – Trading läuft!']
         for p in players:
             p['rank'] = None
         g['status'] = 'trading'
-        _auto_bot_trades(game_id, g)
+        _run_bot_trades(gid, g)
     else:
         g['status'] = 'playing'
-        _settle(game_id, g)
+        _settle(gid, g)
 
 
-def _auto_bot_trades(game_id, g):
+def _run_bot_trades(gid: str, g: dict) -> None:
     s = g['state']
     autoBotTrade(s['players'], s['trades'])
     for t in s['trades']:
-        top = s['players'][t['top_id']]['name']
-        bot = s['players'][t['bot_id']]['name']
-        if t['wish_done'] and not t.get('_log_wish'):
-            s['log'].append(f'{top} wünscht sich Rang {t["wish_rank"]}.')
-            t['_log_wish'] = True
-        if t['give_done'] and not t.get('_log_give'):
-            s['log'].append(f'{bot} gibt Karten an {top}.')
-            t['_log_give'] = True
-        if t['return_done'] and not t.get('_log_return'):
-            s['log'].append(f'{top} gibt schlechteste Karten an {bot}.')
-            t['_log_return'] = True
+        top, bot = s['players'][t['top_id']]['name'], s['players'][t['bot_id']]['name']
+        for flag, msg in (('wish_done',   f'{top} wünscht sich Rang {t["wish_rank"]}.'),
+                          ('give_done',   f'{bot} gibt Karten an {top}.'),
+                          ('return_done', f'{top} gibt schlechteste Karten an {bot}.')):
+            if t[flag] and not t.get('_logged_' + flag):
+                s['log'].append(msg)
+                t['_logged_' + flag] = True
     if allTradesDone(s['trades']):
-        _finalize_trading(game_id, g)
+        _finalize_trading(gid, g)
 
 
-def _finalize_trading(game_id, g):
+def _finalize_trading(gid: str, g: dict) -> None:
     s = g['state']
     for p in s['players']:
         p['rank'] = None
-    trickOrder = list(range(5))
-    random.shuffle(trickOrder)
-    s.update({
-        'trickOrder':     trickOrder,
-        'nextTrickOrder': trickOrder[:],
-        'currentTurn':    trickOrder[0],
-        'mostRecentMove': None,
-        'passedCounter':  0,
-        'remainingRanks': gameRanks[:5],
-        'lastBotMove':    None,
-    })
+    order = list(range(gameEntities))
+    random.shuffle(order)
+    s.update({'trickOrder': order, 'nextTrickOrder': order[:], 'currentTurn': order[0],
+              'mostRecentMove': None, 'passedCounter': 0,
+              'remainingRanks': gameRanks[:gameEntities], 'lastBotMove': None})
     s['stack'].clear()
     s['discardStack'].clear()
     s['log'].append('Trading abgeschlossen – Spiel startet!')
     g['status'] = 'playing'
     g.pop('pendingBotMove', None)
-    _settle(game_id, g)
+    _settle(gid, g)
 
 
-# ══ Route: Seite ═════════════════════════════════════════════════════════════
+def _trade_partner(s: dict, trade: Optional[dict], action: Optional[str]) -> Optional[dict]:
+    if not trade or not action:
+        return None
+    pid = trade['bot_id'] if action in ('wish', 'return') else trade['top_id']
+    return {'name': s['players'][pid]['name'], 'entityID': pid}
+
+
+# ══ Logging ══════════════════════════════════════════════════════════════════
+
+def save_round_log(gid: str, g: dict) -> None:
+    s = g.get('state')
+    if not s:
+        return
+    record = {
+        "ts":         datetime.now(timezone.utc).isoformat(),
+        "lobby_code": gid,
+        "game_id":    gid,
+        "round":      s.get('roundNumber', 1),
+        "players": [{"id": p["entityID"], "name": p["name"], "bot": p.get("isBot", False),
+                     "rank": p["rank"], "starter_hand": p.get("starterHand", [])}
+                    for p in s['players']],
+        "moves": s.get('moveLog', []),
+    }
+    game_logs.append(record)
+    try:
+        with open(LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(record, ensure_ascii=False) + '\n')
+    except Exception as e:  # pragma: no cover
+        print(f"[log] {e}")
+
+
+def all_log_records() -> list:
+    records = list(game_logs)
+    seen = {(r.get('game_id'), r.get('round'), r.get('ts')) for r in records}
+    try:
+        with open(LOG_FILE, 'r', encoding='utf-8') as f:
+            extra = []
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                rec = json.loads(line)
+                key = (rec.get('game_id'), rec.get('round'), rec.get('ts'))
+                if key not in seen:
+                    extra.append(rec)
+                    seen.add(key)
+            records = extra + records
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return sorted(records, key=lambda r: r.get('ts', ''))
+
+
+# ══ 5. Routen: Seite ═════════════════════════════════════════════════════════
 
 @app.route('/')
 def index():
-    html_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates', 'index.html')
-    with open(html_path, 'r', encoding='utf-8') as f:
-        html = f.read()
-    return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+    # bewusst kein render_template: Jinja2 würde das eingebettete JS zerlegen
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates', 'index.html')
+    with open(path, 'r', encoding='utf-8') as f:
+        return f.read(), 200, {'Content-Type': 'text/html; charset=utf-8'}
 
 
-# ══ Routes: Lobby ════════════════════════════════════════════════════════════
+@app.route('/api/health')
+def health():
+    return jsonify({'ok': True, 'games': len(games)})
 
-@app.route('/api/lobbies', methods=['GET'])
+
+# ══ Routen: Lobby & Spielübersicht ═══════════════════════════════════════════
+
+def _game_summary(gid: str, g: dict) -> dict:
+    slots  = g['players']
+    empty  = sum(1 for s in slots if s is None)
+    bots   = sum(1 for s in slots if s and s.get('isBot'))
+    people = sum(1 for s in slots if s and not s.get('isBot'))
+    host   = next((s for s in slots if s and s.get('id') == g.get('host')), None)
+    return {
+        'code': gid, 'status': g['status'],
+        'host': host['name'] if host else '—',
+        'humans': people, 'bots': bots, 'empty': empty,
+        'freeSeats': empty + bots,          # Bot-Plätze sind übernehmbar
+        'round': g.get('roundNumber', 0),
+        'created': g.get('created', 0),
+        'names': [s['name'] for s in slots if s and not s.get('isBot')],
+    }
+
+
+@app.route('/api/lobbies')
 def list_lobbies():
-    """(1) Alle offenen Lobbies – sichtbar und frei joinbar."""
-    out = []
-    for gid, g in games.items():
-        if g['status'] != 'lobby':
-            continue
-        empty  = sum(1 for s in g['players'] if s is None)
-        bots   = sum(1 for s in g['players'] if s and s.get('isBot'))
-        humans = sum(1 for s in g['players'] if s and not s.get('isBot'))
-        if empty + bots == 0:
-            continue
-        host = next((s for s in g['players'] if s and s.get('id') == g['host']), None)
-        out.append({'code': gid, 'host': host['name'] if host else '?',
-                    'humans': humans, 'bots': bots, 'empty': empty,
-                    'created': g.get('created', 0)})
+    """Offene Lobbies **und** laufende Spiele – letztere kann man übernehmen/wieder betreten."""
+    cleanup_games()
+    out = [_game_summary(gid, g) for gid, g in games.items() if g['status'] in LIVE_STATUSES]
     out.sort(key=lambda x: x['created'], reverse=True)
-    return jsonify({'lobbies': out})
+    return jsonify({
+        'lobbies': [x for x in out if x['status'] == 'lobby' and x['freeSeats'] > 0],
+        'running': [x for x in out if x['status'] != 'lobby'],
+    })
 
 
 @app.route('/api/lobby/create', methods=['POST'])
 def create_lobby():
     name = (request.json.get('name') or 'Player').strip()[:20]
-    gid  = str(uuid.uuid4())[:6].upper()
-    pid  = str(uuid.uuid4())
+    gid  = uuid.uuid4().hex[:6].upper()
+    pid  = uuid.uuid4().hex
     games[gid] = {
         'status':      'lobby',
         'host':        pid,
@@ -413,468 +539,609 @@ def create_lobby():
         'state':       None,
         'roundNumber': 0,
         'lastRanks':   {},
+        'vacated':     {},
         'settings':    {'botDelayMs': DEFAULT_BOT_DELAY_MS},
         'created':     time.time(),
+        'touched':     time.time(),
     }
+    touch(games[gid])
     return jsonify({'game_id': gid, 'player_id': pid})
+
+
+def _claim_seat(g: dict, name: str, player_id: Optional[str] = None) -> Optional[tuple]:
+    """
+    Sucht einen Sitzplatz. Reservierter Platz (gleiche player_id) hat Vorrang,
+    dann leere Plätze, dann Bot-Plätze (Übernahme).
+    Gibt (slot, player_id) zurück oder None.
+    """
+    reserved = (g.get('vacated') or {}).get(player_id or '')
+    if reserved:
+        slot = reserved['slot']
+        occupant = g['players'][slot]
+        if occupant is None or occupant.get('isBot'):
+            g['vacated'].pop(player_id, None)
+            return slot, player_id            # gleiche ID ⇒ Host-Rolle bleibt erhalten
+
+    slot = next((i for i, s in enumerate(g['players']) if s is None), None)
+    if slot is None:
+        slot = next((i for i, s in enumerate(g['players']) if s and s.get('isBot')), None)
+    if slot is None:
+        return None
+    return slot, uuid.uuid4().hex
+
+
+def _seat_player(gid: str, g: dict, slot: int, pid: str, name: str) -> None:
+    g['players'][slot] = {"id": pid, "name": name, "entityID": slot, "isBot": False}
+    if g.get('state'):
+        g['state']['players'][slot]['isBot'] = False
+        g['state']['players'][slot]['name']  = name
+        g['state']['log'].append(f'{name} ist (wieder) dabei.')
+    if g['host'] is None:
+        g['host'] = pid
+    pending = g.get('pendingBotMove')
+    if pending and pending['eid'] == slot:
+        g.pop('pendingBotMove', None)
+    if g['status'] == 'playing':
+        _settle(gid, g)
+    elif g['status'] == 'trading':
+        _run_bot_trades(gid, g)
+    touch(g)
 
 
 @app.route('/api/lobby/join', methods=['POST'])
 def join_lobby():
-    data = request.json
+    data = request.json or {}
     gid  = (data.get('game_id') or '').strip().upper()
     name = (data.get('name') or 'Player').strip()[:20]
-    if gid not in games:
+    g    = get_game(gid)
+    if not g:
         return jsonify({'error': 'Spiel nicht gefunden'}), 404
-    g = games[gid]
+    if g['status'] == 'aborted':
+        return jsonify({'error': 'Spiel wurde abgebrochen'}), 400
     if g['status'] != 'lobby':
-        return jsonify({'error': 'Spiel läuft bereits'}), 400
+        return jsonify({'error': 'Spiel läuft bereits – nutze "Beitreten" bei den laufenden Spielen'}), 400
 
-    idx = next((i for i, s in enumerate(g['players']) if s is None), None)
-    if idx is None:  # sonst einen Bot verdraengen
-        idx = next((i for i, s in enumerate(g['players']) if s and s.get('isBot')), None)
-    if idx is None:
+    claim = _claim_seat(g, name)
+    if not claim:
         return jsonify({'error': 'Keine freien Plätze'}), 400
-
-    pid = str(uuid.uuid4())
-    g['players'][idx] = {"id": pid, "name": name, "entityID": idx, "isBot": False}
+    slot, pid = claim
+    _seat_player(gid, g, slot, pid, name)
     return jsonify({'game_id': gid, 'player_id': pid})
+
+
+@app.route('/api/game/<gid>/rejoin', methods=['POST'])
+def rejoin_game(gid):
+    """(1) Wiedereinstieg – auch in ein laufendes Spiel. Reservierter Platz hat Vorrang."""
+    data = request.json or {}
+    g    = get_game(gid)
+    if not g:
+        return jsonify({'error': 'Spiel nicht gefunden'}), 404
+    if g['status'] == 'aborted':
+        return jsonify({'error': 'Spiel wurde abgebrochen'}), 400
+
+    old_pid = data.get('player_id')
+    existing = seat_of(g, old_pid)
+    if existing is not None:                       # sitzt bereits – idempotent
+        return jsonify({'game_id': gid.upper(), 'player_id': old_pid, 'slot': existing})
+
+    reserved = (g.get('vacated') or {}).get(old_pid or '')
+    name = (data.get('name') or (reserved or {}).get('name') or 'Player').strip()[:20]
+
+    claim = _claim_seat(g, name, old_pid)
+    if not claim:
+        return jsonify({'error': 'Kein freier Platz – alle Sitze sind von Menschen besetzt'}), 400
+    slot, pid = claim
+    _seat_player(gid.upper(), g, slot, pid, name)
+    ensure_host(g)
+    return jsonify({'game_id': gid.upper(), 'player_id': pid, 'slot': slot})
 
 
 @app.route('/api/lobby/<gid>', methods=['GET'])
 def lobby_status(gid):
-    if gid not in games:
+    g = get_game(gid)
+    if not g:
         return jsonify({'error': 'Nicht gefunden'}), 404
-    g   = games[gid]
     pid = request.args.get('player_id')
-    known = any(p and p.get('id') == pid for p in g['players'])
     return jsonify({
-        'status':  g['status'],
-        'isHost':  _is_host(g, pid),
-        'kicked':  bool(pid) and not known,
+        'status':   g['status'],
+        'isHost':   is_host(g, pid),
+        'kicked':   bool(pid) and seat_of(g, pid) is None,
         'settings': g['settings'],
         'players': [{'name': p['name'], 'entityID': p['entityID'],
-                     'isBot': p.get('isBot', False), 'isHost': p.get('id') == g['host']}
+                     'isBot': p.get('isBot', False), 'isHost': p.get('id') == g.get('host')}
                     if p else None for p in g['players']],
     })
 
 
 @app.route('/api/lobby/<gid>/bot', methods=['POST'])
 def add_bot(gid):
-    if gid not in games:
+    g = get_game(gid)
+    if not g:
         return jsonify({'error': 'Nicht gefunden'}), 404
-    g = games[gid]
-    if not _is_host(g, request.json.get('player_id')):
+    if not is_host(g, (request.json or {}).get('player_id')):
         return jsonify({'error': 'Nur Host'}), 403
     if g['status'] != 'lobby':
-        return jsonify({'error': 'Nur in Lobby'}), 400
-    idx = next((i for i, s in enumerate(g['players']) if s is None), None)
-    if idx is None:
+        return jsonify({'error': 'Nur in der Lobby'}), 400
+    slot = next((i for i, s in enumerate(g['players']) if s is None), None)
+    if slot is None:
         return jsonify({'error': 'Keine freien Plätze'}), 400
-    g['players'][idx] = _make_bot_slot(idx)
+    g['players'][slot] = bot_slot(slot)
+    touch(g)
     return jsonify({'ok': True})
 
 
 @app.route('/api/lobby/<gid>/remove_bot', methods=['POST'])
 def remove_bot(gid):
-    data = request.json
-    if gid not in games:
+    data = request.json or {}
+    g = get_game(gid)
+    if not g:
         return jsonify({'error': 'Nicht gefunden'}), 404
-    g = games[gid]
-    if not _is_host(g, data.get('player_id')):
+    if not is_host(g, data.get('player_id')):
         return jsonify({'error': 'Nur Host'}), 403
-    idx = data.get('slot')
-    if isinstance(idx, int) and 0 <= idx < 5 and g['players'][idx] and g['players'][idx].get('isBot'):
-        g['players'][idx] = None
+    if g['status'] != 'lobby':
+        return jsonify({'error': 'Nur in der Lobby'}), 400
+    slot = data.get('slot')
+    if isinstance(slot, int) and 0 <= slot < gameEntities and g['players'][slot] \
+            and g['players'][slot].get('isBot'):
+        g['players'][slot] = None
+        touch(g)
     return jsonify({'ok': True})
 
 
 @app.route('/api/lobby/<gid>/start', methods=['POST'])
 def start_game(gid):
-    if gid not in games:
+    g = get_game(gid)
+    if not g:
         return jsonify({'error': 'Nicht gefunden'}), 404
-    g = games[gid]
-    if not _is_host(g, request.json.get('player_id')):
+    if not is_host(g, (request.json or {}).get('player_id')):
         return jsonify({'error': 'Nur Host'}), 403
+    if g['status'] != 'lobby':
+        return jsonify({'error': 'Läuft bereits'}), 400
     for i, slot in enumerate(g['players']):
         if slot is None:
-            g['players'][i] = _make_bot_slot(i)
+            g['players'][i] = bot_slot(i)
     g['roundNumber'] = 1
-    g['lastRanks']   = {}
-    _init_round(gid, g, 1)
+    g['lastRanks'] = {}
+    _init_round(gid.upper(), g, 1)
+    touch(g)
     return jsonify({'ok': True})
 
 
-# ══ (4) Host-Rechte: Kick + Bot-Einstellungen ════════════════════════════════
+# ══ Routen: Host-Rechte, Session, Verlassen ══════════════════════════════════
 
 @app.route('/api/game/<gid>/kick', methods=['POST'])
 def kick_player(gid):
-    """Host kickt einen Spieler. In der Lobby → Platz wird frei.
-       Im laufenden Spiel → der Platz wird von einem Bot übernommen."""
-    data = request.json
-    if gid not in games:
+    data = request.json or {}
+    g = get_game(gid)
+    if not g:
         return jsonify({'error': 'Nicht gefunden'}), 404
-    g = games[gid]
-    if not _is_host(g, data.get('player_id')):
+    if not (is_host(g, data.get('player_id')) or is_admin(data.get('password'))):
         return jsonify({'error': 'Nur Host'}), 403
 
     slot = data.get('slot')
-    if not isinstance(slot, int) or not (0 <= slot < 5) or not g['players'][slot]:
+    if not isinstance(slot, int) or not (0 <= slot < gameEntities) or not g['players'][slot]:
         return jsonify({'error': 'Ungültiger Platz'}), 400
-    target = g['players'][slot]
-    if target.get('id') == g['host']:
+    if g['players'][slot].get('id') == g.get('host') and not is_admin(data.get('password')):
         return jsonify({'error': 'Host kann sich nicht selbst kicken'}), 400
 
-    name = target['name']
-    if g['status'] == 'lobby':
-        g['players'][slot] = None
-        return jsonify({'ok': True})
-
-    # Laufendes Spiel: Platz zum Bot machen, Hand bleibt erhalten
-    g['players'][slot] = _make_bot_slot(slot)
-    s = g['state']
-    if s:
-        s['players'][slot]['isBot'] = True
-        s['players'][slot]['name']  = g['players'][slot]['name']
-        s['log'].append(f'{name} wurde gekickt – ein Bot übernimmt.')
-    if g['status'] == 'trading':
-        _auto_bot_trades(gid, g)
-    elif g['status'] == 'playing':
-        _settle(gid, g)
+    vacate(g, slot, 'wurde gekickt')
+    if g['status'] == 'playing':
+        _settle(gid.upper(), g)
+    elif g['status'] == 'trading':
+        _run_bot_trades(gid.upper(), g)
+    touch(g)
     return jsonify({'ok': True})
 
 
 @app.route('/api/game/<gid>/settings', methods=['POST'])
 def update_settings(gid):
-    """Host stellt die Bot-Geschwindigkeit ein (0 ms = ohne Delay)."""
-    data = request.json
-    if gid not in games:
+    data = request.json or {}
+    g = get_game(gid)
+    if not g:
         return jsonify({'error': 'Nicht gefunden'}), 404
-    g = games[gid]
-    if not _is_host(g, data.get('player_id')):
+    if not (is_host(g, data.get('player_id')) or is_admin(data.get('password'))):
         return jsonify({'error': 'Nur Host'}), 403
 
     if 'botDelayMs' in data:
         try:
-            delay = max(0, min(5000, int(data['botDelayMs'])))
+            delay = max(0, min(MAX_BOT_DELAY_MS, int(data['botDelayMs'])))
         except (TypeError, ValueError):
             return jsonify({'error': 'Ungültiger Wert'}), 400
         g['settings']['botDelayMs'] = delay
         if delay == 0 and g['status'] == 'playing':
             g.pop('pendingBotMove', None)
-            _settle(gid, g)     # Bots sofort durchlaufen lassen
+            _settle(gid.upper(), g)
+    touch(g)
     return jsonify({'ok': True, 'settings': g['settings']})
 
 
-# ══ (2) Session-Wiederherstellung nach Reload ════════════════════════════════
-
 @app.route('/api/session', methods=['GET'])
 def session_check():
+    """
+    (3) Reload-Rettung. Unterscheidet sauber zwischen
+        'Sitz noch da' / 'Sitz reserviert, Rejoin möglich' / 'Spiel weg'.
+    """
     gid = (request.args.get('game_id') or '').strip().upper()
     pid = request.args.get('player_id')
-    if gid not in games:
-        return jsonify({'valid': False})
-    g = games[gid]
-    slot = next((p for p in g['players'] if p and p.get('id') == pid), None)
-    if not slot:
-        return jsonify({'valid': False})
-    return jsonify({'valid': True, 'status': g['status'], 'isHost': _is_host(g, pid),
-                    'name': slot['name'], 'game_id': gid})
+    g   = get_game(gid)
+    if not g or g['status'] == 'aborted':
+        return jsonify({'valid': False, 'exists': False, 'canRejoin': False})
+
+    slot = seat_of(g, pid)
+    if slot is not None:
+        return jsonify({'valid': True, 'exists': True, 'canRejoin': False,
+                        'status': g['status'], 'isHost': is_host(g, pid),
+                        'name': g['players'][slot]['name'], 'game_id': gid})
+
+    reserved  = pid in (g.get('vacated') or {})
+    free_seat = any(s is None or s.get('isBot') for s in g['players'])
+    return jsonify({'valid': False, 'exists': True,
+                    'canRejoin': reserved or free_seat, 'reserved': reserved,
+                    'status': g['status'], 'game_id': gid})
 
 
 @app.route('/api/game/<gid>/leave', methods=['POST'])
 def leave_game(gid):
     data = request.json or {}
-    if gid not in games:
+    g = get_game(gid)
+    if not g:
         return jsonify({'ok': True})
-    g   = games[gid]
-    pid = data.get('player_id')
-    idx = _entity_of(g, pid)
-    if idx is None:
+    pid  = data.get('player_id')
+    slot = seat_of(g, pid)
+    if slot is None:
         return jsonify({'ok': True})
-    if g['status'] == 'lobby':
-        if _is_host(g, pid):
-            games.pop(gid, None)   # Host verlaesst Lobby → Lobby aufloesen
-        else:
-            g['players'][idx] = None
-    else:
-        g['players'][idx] = _make_bot_slot(idx)
-        if g['state']:
-            g['state']['players'][idx]['isBot'] = True
-            g['state']['players'][idx]['name']  = g['players'][idx]['name']
-        if g['status'] == 'trading':
-            _auto_bot_trades(gid, g)
-        elif g['status'] == 'playing':
-            _settle(gid, g)
+
+    vacate(g, slot, 'hat die Runde verlassen')
+    if g['status'] == 'lobby' and not humans(g):
+        games.pop(gid.upper(), None)
+    elif g['status'] == 'playing':
+        _settle(gid.upper(), g)
+    elif g['status'] == 'trading':
+        _run_bot_trades(gid.upper(), g)
+    touch(g)
     return jsonify({'ok': True})
 
 
-# ══ Routes: Game-State ═══════════════════════════════════════════════════════
+# ══ Routen: Admin (Passwort) ═════════════════════════════════════════════════
+
+@app.route('/api/admin/games', methods=['GET'])
+def admin_games():
+    """(2) Alle Spiele einsehen – Grundlage für Beobachten & Abbrechen."""
+    if not is_admin(request.args.get('password')):
+        return jsonify({'error': 'Falsches Passwort'}), 403
+    cleanup_games()
+    out = []
+    for gid, g in games.items():
+        info = _game_summary(gid, g)
+        s = g.get('state')
+        info['players'] = [{'name': p['name'], 'isBot': p.get('isBot', False),
+                            'cards': len(p['hand']), 'rank': p['rank']}
+                           for p in s['players']] if s else \
+                          [{'name': p['name'], 'isBot': p.get('isBot', False),
+                            'cards': 0, 'rank': None} for p in g['players'] if p]
+        out.append(info)
+    out.sort(key=lambda x: x['created'], reverse=True)
+    return jsonify({'games': out})
+
+
+@app.route('/api/game/<gid>/abort', methods=['POST'])
+def abort_game(gid):
+    """(2) Laufendes Spiel abbrechen – per Admin-Passwort oder als Host."""
+    data = request.json or {}
+    g = get_game(gid)
+    if not g:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    if not (is_admin(data.get('password')) or is_host(g, data.get('player_id'))):
+        return jsonify({'error': 'Falsches Passwort'}), 403
+
+    if g.get('state') and not g['state']['finished'] and g['status'] in ('playing', 'trading'):
+        save_round_log(gid.upper(), g)       # angefangene Runde trotzdem loggen
+    g['status'] = 'aborted'
+    g.pop('pendingBotMove', None)
+    touch(g)
+    return jsonify({'ok': True})
+
+
+# ══ Routen: Game-State ═══════════════════════════════════════════════════════
+
+def _spectator_view(gid: str, g: dict) -> dict:
+    s = g.get('state')
+    if not s:
+        return {'status': g['status'], 'spectator': True, 'lobbyCode': gid,
+                'players': [], 'log': [], 'myEntityID': None}
+    return {
+        'status': g['status'], 'spectator': True, 'lobbyCode': gid,
+        'roundNumber': s['roundNumber'], 'stack': s['stack'],
+        'mostRecentMove': s['mostRecentMove'], 'currentTurn': s['currentTurn'],
+        'trickOrder': s['trickOrder'], 'citizenDeck': s['citizenDeck'],
+        'players': [{'name': p['name'], 'entityID': p['entityID'], 'rank': p['rank'],
+                     'prevRank': s['prevRanks'].get(str(p['entityID'])),
+                     'cardCount': len(p['hand']), 'hand': p['hand'],
+                     'isBot': p.get('isBot', False),
+                     'isHost': bool(g['players'][p['entityID']])
+                               and g['players'][p['entityID']].get('id') == g.get('host')}
+                    for p in s['players']],
+        'log': s['log'][-25:], 'finished': s['finished'],
+        'lastBotMove': s.get('lastBotMove'), 'myEntityID': None,
+        'myMoves': [], 'myTrade': None, 'tradeAction': None,
+        'nextIsBot': 'pendingBotMove' in g, 'isHost': False,
+        'settings': g['settings'], 'kicked': False,
+    }
+
 
 @app.route('/api/game/<gid>/state', methods=['GET'])
 def get_state(gid):
-    player_id = request.args.get('player_id')
-    if gid not in games:
+    g = get_game(gid)
+    if not g:
         return jsonify({'error': 'Nicht gefunden'}), 404
-    g = games[gid]
+    gid = gid.upper()
+
+    if g['status'] == 'aborted':
+        return jsonify({'status': 'aborted', 'lobbyCode': gid})
+
+    password  = request.args.get('password')
+    player_id = request.args.get('player_id')
+
+    if g['status'] != 'lobby':
+        _tick_bots(gid, g)
+
+    if is_admin(password) and seat_of(g, player_id) is None:
+        return jsonify(_spectator_view(gid, g))
 
     if g['status'] == 'lobby':
-        return jsonify({'status': 'lobby'})
+        return jsonify({'status': 'lobby', 'lobbyCode': gid})
 
-    _tick_bots(gid, g)
-
-    entity_id = _entity_of(g, player_id)
-    if entity_id is None:
-        return jsonify({'status': g['status'], 'kicked': True, 'myEntityID': None})
+    seat = seat_of(g, player_id)
+    if seat is None:
+        free = any(s is None or s.get('isBot') for s in g['players'])
+        return jsonify({'status': g['status'], 'lobbyCode': gid, 'kicked': True,
+                        'canRejoin': free or player_id in (g.get('vacated') or {}),
+                        'myEntityID': None})
 
     s = g['state']
+    my_moves = (possibleMoves(s['players'], seat, s['mostRecentMove'])
+                if g['status'] == 'playing' and seat == s['currentTurn'] and not s['finished']
+                else [])
 
-    my_moves = []
-    if g['status'] == 'playing' and entity_id == s['currentTurn'] and not s['finished']:
-        my_moves = possibleMoves(s['players'], entity_id, s['mostRecentMove'])
-
-    my_trade, trade_action = None, None
+    my_trade = trade_action = None
     if g['status'] == 'trading':
-        tw = pendingWishFor(s['trades'], entity_id)
-        tg = pendingGiveFor(s['trades'], entity_id)
-        tr = pendingReturnFor(s['trades'], entity_id)
-        if   tw: my_trade, trade_action = tw, 'wish'
-        elif tg: my_trade, trade_action = tg, 'give'
-        elif tr: my_trade, trade_action = tr, 'return'
-
-    players_view = [{
-        'name':      p['name'],
-        'entityID':  p['entityID'],
-        'rank':      p['rank'],
-        'prevRank':  s['prevRanks'].get(p['entityID']),
-        'cardCount': len(p['hand']),
-        'hand':      p['hand'] if p['entityID'] == entity_id else [],
-        'isBot':     p.get('isBot', False),
-        'isHost':    bool(g['players'][p['entityID']]) and g['players'][p['entityID']].get('id') == g['host'],
-    } for p in s['players']]
+        for action, finder in (('wish', pendingWishFor), ('give', pendingGiveFor),
+                               ('return', pendingReturnFor)):
+            found = finder(s['trades'], seat)
+            if found:
+                my_trade, trade_action = found, action
+                break
 
     return jsonify({
         'status':         g['status'],
         'lobbyCode':      gid,
-        'roundNumber':    s.get('roundNumber', 1),
-        'players':        players_view,
+        'roundNumber':    s['roundNumber'],
+        'players': [{'name': p['name'], 'entityID': p['entityID'], 'rank': p['rank'],
+                     'prevRank': s['prevRanks'].get(str(p['entityID'])),
+                     'cardCount': len(p['hand']),
+                     'hand': p['hand'] if p['entityID'] == seat else [],
+                     'isBot': p.get('isBot', False),
+                     'isHost': bool(g['players'][p['entityID']])
+                               and g['players'][p['entityID']].get('id') == g.get('host')}
+                    for p in s['players']],
         'stack':          s['stack'],
         'mostRecentMove': s['mostRecentMove'],
         'currentTurn':    s['currentTurn'],
-        'myEntityID':     entity_id,
+        'myEntityID':     seat,
         'myMoves':        my_moves,
         'myTrade':        my_trade,
+        'tradeAction':    trade_action,
+        'tradePartner':   _trade_partner(s, my_trade, trade_action),
         'log':            s['log'][-18:],
         'finished':       s['finished'],
         'lastBotMove':    s.get('lastBotMove'),
-        'tradeAction':    trade_action,
-        'tradePartner':   _get_trade_partner(s, my_trade, trade_action),
         'nextIsBot':      'pendingBotMove' in g,
-        'isHost':         _is_host(g, player_id),
+        'isHost':         is_host(g, player_id),
         'settings':       g['settings'],
+        'spectator':      False,
         'kicked':         False,
     })
 
 
 @app.route('/api/game/<gid>/move', methods=['POST'])
 def make_move(gid):
-    data      = request.json
-    player_id = data.get('player_id')
-    move      = data.get('move')
-    if gid not in games:
+    data = request.json or {}
+    g = get_game(gid)
+    if not g:
         return jsonify({'error': 'Nicht gefunden'}), 404
-    g = games[gid]
     if g['status'] != 'playing':
         return jsonify({'error': 'Nicht in Spielphase'}), 400
-    s = g['state']
-    entity_id = _entity_of(g, player_id)
-    if entity_id is None:
+
+    s    = g['state']
+    seat = seat_of(g, data.get('player_id'))
+    if seat is None:
         return jsonify({'error': 'Unbekannter Spieler'}), 403
-    if entity_id != s['currentTurn']:
+    if seat != s['currentTurn']:
         return jsonify({'error': 'Nicht dein Zug'}), 400
-    if move not in possibleMoves(s['players'], entity_id, s['mostRecentMove']):
+
+    move = data.get('move')
+    if move not in possibleMoves(s['players'], seat, s['mostRecentMove']):
         return jsonify({'error': 'Ungültiger Zug'}), 400
 
-    _do_move(gid, g, entity_id, move)
-    _settle(gid, g)
+    _do_move(gid.upper(), g, seat, move)
+    _settle(gid.upper(), g)
+    touch(g)
     return jsonify({'ok': True})
 
 
-# ══ Routes: Trading ══════════════════════════════════════════════════════════
+# ══ Routen: Trading ══════════════════════════════════════════════════════════
+
+def _trade_ctx(gid, finder, action_name):
+    """Gemeinsame Validierung der drei Trading-Schritte."""
+    data = request.json or {}
+    g = get_game(gid)
+    if not g:
+        return None, jsonify({'error': 'Nicht gefunden'}), 404
+    if g['status'] != 'trading':
+        return None, jsonify({'error': 'Nicht in Trading-Phase'}), 400
+    seat = seat_of(g, data.get('player_id'))
+    if seat is None:
+        return None, jsonify({'error': 'Unbekannter Spieler'}), 403
+    trade = finder(g['state']['trades'], seat)
+    if not trade:
+        return None, jsonify({'error': f'Kein {action_name} für dich'}), 400
+    return (g, seat, trade, data), None, None
+
+
+def _check_cards(hand: list, cards: list, count: int):
+    if len(cards) != count:
+        return jsonify({'error': f'Bitte genau {count} Karte(n) wählen'}), 400
+    pool = list(hand)
+    for c in cards:
+        if c not in pool:
+            return jsonify({'error': f'Karte {c} nicht in deiner Hand'}), 400
+        pool.remove(c)
+    return None
+
 
 @app.route('/api/game/<gid>/trade/wish', methods=['POST'])
 def submit_wish(gid):
-    data = request.json
-    if gid not in games:
-        return jsonify({'error': 'Nicht gefunden'}), 404
-    g = games[gid]
-    if g['status'] != 'trading':
-        return jsonify({'error': 'Nicht in Trading-Phase'}), 400
-    s = g['state']
-    entity_id = _entity_of(g, data.get('player_id'))
-    if entity_id is None:
-        return jsonify({'error': 'Unbekannter Spieler'}), 403
-
-    wish_rank = (data.get('wish_rank') or '').strip()
-    trade = pendingWishFor(s['trades'], entity_id)
-    if not trade:
-        return jsonify({'error': 'Kein Wunsch für dich'}), 400
-    if wish_rank not in rankOrder:
+    ctx, err, code = _trade_ctx(gid, pendingWishFor, 'Wunsch')
+    if err:
+        return err, code
+    g, seat, trade, data = ctx
+    wish = (data.get('wish_rank') or '').strip()
+    if wish not in rankOrder:
         return jsonify({'error': 'Ungültiger Rang'}), 400
 
-    trade['wish_rank'] = wish_rank
-    trade['wish_done'] = True
-    trade['_log_wish'] = True
-    s['log'].append(f'{s["players"][entity_id]["name"]} wünscht sich Rang {wish_rank}.')
-    _auto_bot_trades(gid, g)
+    trade.update(wish_rank=wish, wish_done=True, _logged_wish_done=True)
+    g['state']['log'].append(f'{g["state"]["players"][seat]["name"]} wünscht sich Rang {wish}.')
+    _run_bot_trades(gid.upper(), g)
+    touch(g)
     return jsonify({'ok': True})
 
 
 @app.route('/api/game/<gid>/trade/give', methods=['POST'])
 def submit_give(gid):
-    data  = request.json
-    cards = data.get('cards', [])
-    if gid not in games:
-        return jsonify({'error': 'Nicht gefunden'}), 404
-    g = games[gid]
-    if g['status'] != 'trading':
-        return jsonify({'error': 'Nicht in Trading-Phase'}), 400
-    s = g['state']
-    entity_id = _entity_of(g, data.get('player_id'))
-    if entity_id is None:
-        return jsonify({'error': 'Unbekannter Spieler'}), 403
+    ctx, err, code = _trade_ctx(gid, pendingGiveFor, 'Give')
+    if err:
+        return err, code
+    g, seat, trade, data = ctx
+    s, cards = g['state'], data.get('cards') or []
+    hand = s['players'][seat]['hand']
 
-    trade = pendingGiveFor(s['trades'], entity_id)
-    if not trade:
-        return jsonify({'error': 'Kein Give für dich'}), 400
-    if len(cards) != trade['count']:
-        return jsonify({'error': f'Bitte genau {trade["count"]} Karte(n) wählen'}), 400
+    bad = _check_cards(hand, cards, trade['count'])
+    if bad:
+        return bad
 
-    hand = s['players'][entity_id]['hand']
-    for c in cards:
-        if c not in hand:
-            return jsonify({'error': f'Karte {c} nicht in deiner Hand'}), 400
-
-    wish_rank    = trade['wish_rank']
-    owned_wished = [c for c in hand if getRank(c) == wish_rank]
-    given_wished = [c for c in cards if getRank(c) == wish_rank]
-    must_give    = min(len(owned_wished), trade['count'])
-    if len(given_wished) < must_give:
-        return jsonify({'error': f'Du musst {must_give} Karte(n) vom Rang {wish_rank} abgeben!'}), 400
+    must = requiredWishCards(hand, trade['wish_rank'], trade['count'])
+    if sum(1 for c in cards if getRank(c) == trade['wish_rank']) < must:
+        return jsonify({'error': f'Du musst {must} Karte(n) vom Rang {trade["wish_rank"]} abgeben!'}), 400
 
     for c in cards:
         hand.remove(c)
         s['players'][trade['top_id']]['hand'].append(c)
     for p in s['players']:
         p['hand'] = sortHand(p['hand'])
-    trade['give_done'] = True
-    trade['_log_give'] = True
-    s['log'].append(f'{s["players"][entity_id]["name"]} gibt {len(cards)} Karte(n) ab.')
-    _auto_bot_trades(gid, g)
+
+    trade.update(give_done=True, _logged_give_done=True)
+    s['log'].append(f'{s["players"][seat]["name"]} gibt {len(cards)} Karte(n) ab.')
+    _run_bot_trades(gid.upper(), g)
+    touch(g)
     return jsonify({'ok': True})
 
 
 @app.route('/api/game/<gid>/trade/return', methods=['POST'])
 def submit_return(gid):
-    data  = request.json
-    cards = data.get('cards', [])
-    if gid not in games:
-        return jsonify({'error': 'Nicht gefunden'}), 404
-    g = games[gid]
-    if g['status'] != 'trading':
-        return jsonify({'error': 'Nicht in Trading-Phase'}), 400
-    s = g['state']
-    entity_id = _entity_of(g, data.get('player_id'))
-    if entity_id is None:
-        return jsonify({'error': 'Unbekannter Spieler'}), 403
+    ctx, err, code = _trade_ctx(gid, pendingReturnFor, 'Return')
+    if err:
+        return err, code
+    g, seat, trade, data = ctx
+    s, cards = g['state'], data.get('cards') or []
 
-    trade = pendingReturnFor(s['trades'], entity_id)
-    if not trade:
-        return jsonify({'error': 'Kein Return für dich'}), 400
-    if len(cards) != trade['count']:
-        return jsonify({'error': f'Bitte genau {trade["count"]} Karte(n) wählen'}), 400
-
-    hand = s['players'][entity_id]['hand']
-    for c in cards:
-        if c not in hand:
-            return jsonify({'error': f'Karte {c} nicht in deiner Hand'}), 400
+    bad = _check_cards(s['players'][seat]['hand'], cards, trade['count'])
+    if bad:
+        return bad
 
     resolveReturn(s['players'], trade, cards)
-    trade['return_done'] = True
-    trade['_log_return'] = True
-    s['log'].append(f'{s["players"][entity_id]["name"]} gibt {len(cards)} Karte(n) '
+    trade.update(return_done=True, _logged_return_done=True)
+    s['log'].append(f'{s["players"][seat]["name"]} gibt {len(cards)} Karte(n) '
                     f'an {s["players"][trade["bot_id"]]["name"]} zurück.')
     if allTradesDone(s['trades']):
-        _finalize_trading(gid, g)
+        _finalize_trading(gid.upper(), g)
+    touch(g)
     return jsonify({'ok': True})
 
 
 @app.route('/api/game/<gid>/next_round', methods=['POST'])
 def next_round(gid):
-    if gid not in games:
+    g = get_game(gid)
+    if not g:
         return jsonify({'error': 'Nicht gefunden'}), 404
-    g = games[gid]
-    if not _is_host(g, request.json.get('player_id')):
+    if not is_host(g, (request.json or {}).get('player_id')):
         return jsonify({'error': 'Nur Host'}), 403
+    if g['status'] != 'finished':
+        return jsonify({'error': 'Runde läuft noch'}), 400
     g['roundNumber'] += 1
-    _init_round(gid, g, g['roundNumber'])
+    _init_round(gid.upper(), g, g['roundNumber'])
+    touch(g)
     return jsonify({'ok': True})
 
 
-def _get_trade_partner(s, trade, action):
-    if not trade or not action:
-        return None
-    partner_id = trade['bot_id'] if action in ('wish', 'return') else trade['top_id']
-    p = s['players'][partner_id]
-    return {'name': p['name'], 'entityID': partner_id}
+# ══ Routen: Logs (JSON + CSV) ════════════════════════════════════════════════
 
+CSV_COLUMNS = ['ts', 'lobby_code', 'round', 'trick', 'move_index',
+               'player_id', 'player_name', 'is_bot', 'move', 'auto',
+               'legal_moves', 'active_hand', 'trick_order', 'citizen_stack',
+               'final_rank', 'starter_hand']
 
-# ══ (6) Routes: Logs (JSON + CSV) ════════════════════════════════════════════
 
 @app.route('/api/logs', methods=['GET'])
 def get_logs():
-    if request.args.get('password', '') != LOG_PASSWORD:
+    if not is_admin(request.args.get('password')):
         return jsonify({'error': 'Falsches Passwort'}), 403
-    return jsonify({'logs': _all_log_records()})
+    return jsonify({'logs': all_log_records()})
 
 
 @app.route('/api/logs.csv', methods=['GET'])
 def get_logs_csv():
-    if request.args.get('password', '') != LOG_PASSWORD:
+    if not is_admin(request.args.get('password')):
         return jsonify({'error': 'Falsches Passwort'}), 403
 
     only = (request.args.get('lobby') or '').strip().upper()
     buf  = io.StringIO()
     w    = csv.writer(buf, delimiter=';')
-    w.writerow(['ts', 'lobby_code', 'round', 'trick', 'move_index',
-                'player_id', 'player_name', 'is_bot', 'move', 'auto',
-                'final_rank', 'starter_hand'])
+    w.writerow(CSV_COLUMNS)
 
-    for rec in _all_log_records():
+    def cell(seq):
+        return ' '.join(str(x) for x in (seq or []))
+
+    for rec in all_log_records():
         code = rec.get('lobby_code') or rec.get('game_id', '')
         if only and code != only:
             continue
-        pinfo = {p['id']: p for p in rec.get('players', [])}
+        by_id = {p['id']: p for p in rec.get('players', [])}
         for i, m in enumerate(rec.get('moves', [])):
-            p = pinfo.get(m.get('p'), {})
+            p = by_id.get(m.get('p'), {})
             w.writerow([
                 rec.get('ts', ''), code, m.get('round', ''), m.get('trick', ''), i,
                 m.get('p', ''), m.get('name', ''),
                 'ja' if p.get('bot') else 'nein',
                 m.get('move', ''), 'ja' if m.get('auto') else 'nein',
+                cell(m.get('legal')),      # (4) legal moves
+                cell(m.get('hand')),       # (4) active hand (vor dem Zug)
+                cell(m.get('order')),      # (4) trick order
+                cell(m.get('citizen')),    # (4) citizen stack
                 p.get('rank') or '',
-                ' '.join(p.get('starter_hand', [])),
+                cell(p.get('starter_hand')),
             ])
 
     stamp = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M')
-    fname = f'arschloch-logs-{only or "alle"}-{stamp}.csv'
-    # BOM, damit Excel die Kartensymbole/Umlaute korrekt liest
-    return Response('\ufeff' + buf.getvalue(), mimetype='text/csv; charset=utf-8',
-                    headers={'Content-Disposition': f'attachment; filename="{fname}"'})
+    name  = f'arschloch-logs-{only or "alle"}-{stamp}.csv'
+    # BOM ⇒ Excel liest Umlaute und Kartensymbole korrekt
+    return Response('\ufeff' + buf.getvalue(),
+                    mimetype='text/csv; charset=utf-8',
+                    headers={'Content-Disposition': f'attachment; filename="{name}"'})
 
 
 # ══ Run ══════════════════════════════════════════════════════════════════════
 
+load_state()
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
