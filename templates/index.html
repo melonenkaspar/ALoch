@@ -78,10 +78,8 @@ select{background:#111;border:1px solid var(--border);border-radius:4px;color:va
 #bot-move-banner{background:#1a1a12;border:1px solid var(--accent);border-radius:6px;padding:.5rem .8rem;font-family:'DM Mono',monospace;font-size:.8rem;color:var(--accent);display:none;text-align:center;margin-top:.3rem}
 .box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem}
 .box h3{font-size:.7rem;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.7rem}
-.hand-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:.7rem}
+.hand-header{margin-bottom:.7rem}
 .hand-header h3{margin:0}
-.sort-btn{background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--muted);font-size:.72rem;padding:.25rem .5rem;cursor:pointer;font-family:'DM Mono',monospace}
-.sort-btn:hover{border-color:var(--accent);color:var(--accent)}
 #hand-cards,#move-buttons{display:flex;flex-wrap:wrap;gap:.35rem}
 .mv{background:#111;border:1px solid var(--border);border-radius:5px;color:var(--text);font-family:'DM Mono',monospace;font-size:.88rem;padding:.45rem .9rem;cursor:pointer;transition:border-color .15s,background .15s}
 .mv:hover{border-color:var(--accent);background:#1e1a12;color:var(--accent)}
@@ -206,7 +204,6 @@ select{background:#111;border:1px solid var(--border);border-radius:4px;color:va
     <div id="hand-area" class="box">
       <div class="hand-header">
         <h3>Deine Hand</h3>
-        <button class="sort-btn" onclick="toggleSort()">⇅ <span id="sort-lbl">sortiert</span></button>
       </div>
       <div id="hand-cards"></div>
     </div>
@@ -231,6 +228,14 @@ select{background:#111;border:1px solid var(--border);border-radius:4px;color:va
         <div class="hint" style="margin-bottom:.5rem">Wähle deine schlechtesten Karten:</div>
         <div id="return-cards" class="tcards"></div>
         <button class="btn" onclick="submitReturn()">Zurückgeben bestätigen</button>
+      </div>
+      <div id="trade-citizen-step" style="display:none">
+        <div class="hint" style="margin-bottom:.5rem">Wähle 2 Karten, die du gegen den Citizen-Stack tauschen willst (optional):</div>
+        <div id="citizen-cards" class="tcards"></div>
+        <div class="btn-row">
+          <button class="btn" onclick="submitCitizenSwap()">Tauschen</button>
+          <button class="btn sec" onclick="skipCitizenSwapUI()">Überspringen</button>
+        </div>
       </div>
       <div id="trade-err" class="err"></div>
     </div>
@@ -316,7 +321,7 @@ const S = {
   gameId:null, playerId:null, myEntityID:null, isHost:false,
   spectator:false, adminPw:null,
   poll:null, pollMs:0, lobbyPoll:null,
-  netFails:0, sortEnabled:true, lastHand:[], lastStatus:null,
+  netFails:0, lastHand:[], lastStatus:null,
   botDelayMs:900, shownBotSeq:-1, botTimer:null,
   selCards:[], selWish:null, tradeKey:null,
 };
@@ -373,7 +378,7 @@ const ccs = c => '<span class="cc sm'+(suitRed(c)?' red':'')+'">'+c+'</span>';
 const RV = {"2":0,"3":4,"4":8,"5":12,"6":16,"7":20,"8":24,"9":28,"T":32,"J":36,"Q":40,"K":44,"A":48};
 const SV = {"♣":0,"♦":1,"♥":2,"♠":3};
 const cardVal = c => (RV[c[0]]??0) + (SV[c[1]]??0);
-const sortedHand = h => S.sortEnabled ? [...h].sort((a,b)=>cardVal(a)-cardVal(b)) : h;
+const sortedHand = h => [...h].sort((a,b)=>cardVal(a)-cardVal(b));
 
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -392,11 +397,6 @@ function renderHand(hand){
   $('hand-cards').innerHTML = S.lastHand.length
     ? sortedHand(S.lastHand).map(cc).join('')
     : '<span class="empty">Keine Karten</span>';
-}
-function toggleSort(){
-  S.sortEnabled = !S.sortEnabled;
-  $('sort-lbl').textContent = S.sortEnabled ? 'sortiert' : 'original';
-  renderHand(S.lastHand); S.tradeKey = null;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -737,7 +737,10 @@ function renderGame(d){
   // Turn-Banner
   const tb = $('turn-banner');
   const cur = d.players.find(p=>p.entityID===d.currentTurn);
-  if(d.status === 'trading')        tb.innerHTML = '<span>Trading-Phase</span>';
+  const allBots = d.players.length>0 && d.players.every(p=>p.isBot);
+  if(allBots && (d.status==='playing'||d.status==='trading')){
+    tb.innerHTML = '<span style="color:var(--muted)">⏸ Spiel pausiert – kein Mensch am Tisch</span>';
+  } else if(d.status === 'trading')        tb.innerHTML = '<span>Trading-Phase</span>';
   else if(d.status === 'finished')  tb.innerHTML = '<span>Runde beendet</span>';
   else if(!S.spectator && d.currentTurn === S.myEntityID) tb.innerHTML = '<span>Du bist dran!</span>';
   else tb.innerHTML = (cur && cur.isBot)
@@ -805,9 +808,13 @@ function renderTrade(d, hand){
   if(key === S.tradeKey) return;         // Auswahl beim Poll nicht zerstören
   S.tradeKey = key; S.selCards = []; S.selWish = null;
   $('trade-err').textContent = '';
-  ['trade-wish-step','trade-give-step','trade-return-step'].forEach(i=>$(i).style.display='none');
+  ['trade-wish-step','trade-give-step','trade-return-step','trade-citizen-step'].forEach(i=>$(i).style.display='none');
 
-  if(act === 'wish'){
+  if(act === 'citizen_swap'){
+    $('trade-info').innerHTML = 'Du bist <b>Citizen</b>. Du darfst 2 Karten mit dem Citizen-Stack tauschen – musst aber nicht.';
+    $('trade-citizen-step').style.display = 'block';
+    buildPicker('citizen-cards', hand, t.count);
+  } else if(act === 'wish'){
     $('trade-info').innerHTML = 'Du bist <b>'+t.pair+'</b>. Wünsche dir einen Rang von <b>'+esc(partner)+'</b> ('+t.count+' Karte(n)).';
     $('trade-wish-step').style.display = 'block';
     const rk = $('wish-ranks'); rk.innerHTML = '';
@@ -857,6 +864,11 @@ function submitWish(){
 }
 const submitGive   = () => tradeStep('give',   {cards:S.selCards});
 const submitReturn = () => tradeStep('return', {cards:S.selCards});
+function submitCitizenSwap(){
+  if(S.selCards.length !== 2){ $('trade-err').textContent='Bitte genau 2 Karten wählen.'; return; }
+  tradeStep('citizen_swap', {cards:S.selCards});
+}
+const skipCitizenSwapUI = () => tradeStep('citizen_swap', {skip:true});
 
 /* ── Rundenende ────────────────────────────────────────────────────────────*/
 function showFinished(players){
