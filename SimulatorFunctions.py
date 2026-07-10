@@ -1,6 +1,6 @@
 # ─── SimulatorFunctions.py ────────────────────────────────────────────────────
 import copy, random
-from SimulatorConfig import rankOrder, gameRanks
+from SimulatorConfig import rankOrder
 
 _RANK_TO_BASE = {"2":0,"3":4,"4":8,"5":12,"6":16,"7":20,
                  "8":24,"9":28,"T":32,"J":36,"Q":40,"K":44,"A":48}
@@ -37,10 +37,10 @@ def createEntities(names):
 
 # ── Card helpers ──────────────────────────────────────────────────────────────
 
-def getRank(card):   return card[0]
-def getSuit(card):   return card[1]
+def getRank(card):     return card[0]
+def getSuit(card):     return card[1]
 def getMoveSize(move): return move[2]
-def cardPower(card): return _RANK_TO_BASE[getRank(card)]
+def cardPower(card):   return _RANK_TO_BASE[getRank(card)]
 
 # ── Moves ─────────────────────────────────────────────────────────────────────
 
@@ -80,7 +80,7 @@ def onlyPassAvailable(players, entity, activePlay, enablePass=True):
     return possibleMoves(players, entity, activePlay, enablePass) == ['pass']
 
 def randomMove(moves):
-    """Bots never pass voluntarily if they have real moves."""
+    """Bots passen nie freiwillig, wenn es echte Züge gibt."""
     real = [m for m in moves if m != 'pass']
     return random.choice(real) if real else 'pass'
 
@@ -96,173 +96,115 @@ def play(players, entity, pile, activePlay):
             continue
         i += 1
 
-# ── Trading (classic rank-distance) ──────────────────────────────────────────
+# ── Trading ───────────────────────────────────────────────────────────────────
 
 def buildTrades(players, gameRanks):
     """
-    Classic trading:
-      President  ↔ Brokie        (2 cards each)
-      Vice-Pres  ↔ Vice-Brokie   (1 card each)
-      Citizen    → nothing
-    Returns list of {"from": id, "to": id, "count": n, "direction": "give_best"|"give_worst"}
+    Trading mit Wunsch-Mechanik:
+      President wünscht sich einen Rang vom Brokie (2 Karten).
+      Vice-President wünscht sich einen Rang vom Vice-Brokie (1 Karte).
+      Citizen tauscht nicht.
     """
     rank_to_id = {p["rank"]: p["entityID"] for p in players if p["rank"]}
     trades = []
-    pairs = [
-        ("President",      "Brokie",       2),
-        ("Vice-President", "Vice-Brokie",  1),
-    ]
+    pairs = [("President", "Brokie", 2), ("Vice-President", "Vice-Brokie", 1)]
     for top_rank, bot_rank, count in pairs:
         if top_rank in rank_to_id and bot_rank in rank_to_id:
-            top_id = rank_to_id[top_rank]
-            bot_id = rank_to_id[bot_rank]
-            # Brokie gives best cards to President
-            trades.append({"from": bot_id, "to": top_id,
-                           "count": count, "direction": "give_best"})
-            # President gives worst cards to Brokie
-            trades.append({"from": top_id, "to": bot_id,
-                           "count": count, "direction": "give_worst"})
+            trades.append({
+                "pair":        top_rank,
+                "top_id":      rank_to_id[top_rank],
+                "bot_id":      rank_to_id[bot_rank],
+                "count":       count,
+                "wish_rank":   None,
+                "wish_done":   False,
+                "give_done":   False,
+                "return_done": False,
+            })
     return trades
 
-def executeTrade(players, trade):
-    """Execute one side of a trade immediately (used for bots)."""
-    eid   = trade["from"]
-    hand  = sortHand(players[eid]["hand"])
-    count = trade["count"]
-    if trade["direction"] == "give_best":
-        cards = hand[-count:]
-    else:
-        cards = hand[:count]
+def resolveGive(players, trade):
+    """Unterer Spieler gibt Karten gemäß Wunsch ab (sonst seine besten)."""
+    bot_id    = trade["bot_id"]
+    top_id    = trade["top_id"]
+    wish_rank = trade["wish_rank"]
+    count     = trade["count"]
+    hand      = sortHand(players[bot_id]["hand"])
+
+    wished = [c for c in hand if getRank(c) == wish_rank]
+    cards  = wished[:count]
+
+    if len(cards) < count:
+        remaining = [c for c in hand if c not in cards]
+        cards += remaining[-(count - len(cards)):]
+
     for c in cards:
-        players[eid]["hand"].remove(c)
-        players[trade["to"]]["hand"].append(c)
+        players[bot_id]["hand"].remove(c)
+        players[top_id]["hand"].append(c)
     for p in players:
         p["hand"] = sortHand(p["hand"])
     return cards
 
-def pendingTradeFor(players, trades, entity_id):
-    """Return the pending trade where this entity must give cards, or None."""
+def resolveReturn(players, trade, return_cards):
+    """Oberer Spieler gibt seine schlechtesten Karten zurück."""
+    top_id = trade["top_id"]
+    bot_id = trade["bot_id"]
+    for c in return_cards:
+        players[top_id]["hand"].remove(c)
+        players[bot_id]["hand"].append(c)
+    for p in players:
+        p["hand"] = sortHand(p["hand"])
+
+def pendingWishFor(trades, entity_id):
     for t in trades:
-        if t["from"] == entity_id and not t.get("done"):
+        if t["top_id"] == entity_id and not t["wish_done"]:
             return t
     return None
 
-# ── Turn management ───────────────────────────────────────────────────────────
+def pendingGiveFor(trades, entity_id):
+    for t in trades:
+        if t["bot_id"] == entity_id and t["wish_done"] and not t["give_done"]:
+            return t
+    return None
 
-def advanceTurn(s, g, enablePass=True):
-    for _ in range(60):  # hard cap to prevent infinite loops
-        trickOrder = s['trickOrder']  # re-read each iteration as it may change
-        if not trickOrder:
-            break
-        current = s['currentTurn']
-        if current not in trickOrder:
-            # currentTurn is stale – pick first active player
-            active = [e for e in trickOrder if s['players'][e]['rank'] is None]
-            if not active:
-                break
-            s['currentTurn'] = active[0]
-            continue
-        if s['players'][current]['rank'] is not None:
-            # Player already finished – advance
-            idx = trickOrder.index(current)
-            s['currentTurn'] = trickOrder[(idx+1) % len(trickOrder)]
-            continue
-        if onlyPassAvailable(s['players'], current, s['mostRecentMove'], enablePass):
-            name = s['players'][current]['name']
-            s['log'].append(f'🤖 {name} passt automatisch.')
-            _appendMoveLog(s, current, name, 'pass', auto=True)
-            s['passedCounter'] += 1
-            active_count = len([e for e in trickOrder if s['players'][e]['rank'] is None])
-            if s['passedCounter'] >= active_count:
-                _resetRound(s, current, trickOrder)
-                continue
-            if current in trickOrder:
-                idx = trickOrder.index(current)
-                s['currentTurn'] = trickOrder[(idx+1) % len(trickOrder)]
-            continue
-        # Human player with real moves – stop and wait
-        if not s['players'][current].get('isBot'):
-            break
-        # Bot with real moves – play immediately
-        moves = possibleMoves(s['players'], current, s['mostRecentMove'], enablePass)
-        botMove = randomMove(moves)  # never returns 'pass' if real moves exist
-        _executeBotMove(s, g, current, botMove, enablePass)
-        if g.get('status') in ('trading', 'finished'):
-            break  # game state changed, stop advancing
+def pendingReturnFor(trades, entity_id):
+    for t in trades:
+        if t["top_id"] == entity_id and t["give_done"] and not t["return_done"]:
+            return t
+    return None
 
-def _executeBotMove(s, g, entity_id, move, enablePass=True):
-    trickOrder = s['trickOrder']
-    name       = s['players'][entity_id]['name']
-    if move == 'pass':
-        s['log'].append(f'🤖 {name} passt.')
-        _appendMoveLog(s, entity_id, name, 'pass')
-        s['passedCounter'] += 1
-    else:
-        play(s['players'], entity_id, s['stack'], move)
-        s['players'][entity_id]['hand'] = sortHand(s['players'][entity_id]['hand'])
-        s['mostRecentMove'] = move
-        s['passedCounter']  = 0
-        s['log'].append(f'🤖 {name} spielt {move}.')
-        s['lastBotMove'] = {'name': name, 'move': move, 'stack': list(s['stack'])}
-        _appendMoveLog(s, entity_id, name, move)
-        if not s['players'][entity_id]['hand']:
-            done = assignRank(s, g, entity_id, move, trickOrder)
-            if done: return
-            trickOrder = s['trickOrder']  # re-read after assignRank may mutate it
-            if trickOrder:
-                s['currentTurn'] = trickOrder[0]
-            return
-    # re-read trickOrder as assignRank may have mutated it
-    trickOrder = s['trickOrder']
-    active = len([e for e in trickOrder if s['players'][e]['rank'] is None])
-    if active == 0:
-        return
-    if s['passedCounter'] >= active:
-        _resetRound(s, entity_id, trickOrder)
-        return
-    if entity_id in trickOrder:
-        idx = trickOrder.index(entity_id)
-        s['currentTurn'] = trickOrder[(idx+1) % len(trickOrder)]
-    elif trickOrder:
-        s['currentTurn'] = trickOrder[0]
+def pendingTradeFor(players, trades, entity_id):
+    return (pendingWishFor(trades, entity_id) or
+            pendingGiveFor(trades, entity_id) or
+            pendingReturnFor(trades, entity_id))
 
-def _resetRound(s, triggerEntity, trickOrder):
-    s['log'].append('Alle gepasst – neue Runde.')
-    s['passedCounter'] = 0
-    for card in s['stack']:
-        s['discardStack'].append(card)
-    s['mostRecentMove'] = None
-    s['stack'].clear()
-    cur_idx   = trickOrder.index(triggerEntity) if triggerEntity in trickOrder else 0
-    new_order = [trickOrder[(cur_idx+i) % len(trickOrder)] for i in range(len(trickOrder))]
-    s['trickOrder']     = new_order
-    s['nextTrickOrder'] = new_order[:]
-    s['currentTurn']    = new_order[0]
+def allTradesDone(trades):
+    return all(t["return_done"] for t in trades)
 
-def assignRank(s, g, entity_id, move, trickOrder):
-    remaining = s['remainingRanks']
-    name      = s['players'][entity_id]['name']
-    if not remaining: return False
-    if getRank(move) == 'A':
-        s['players'][entity_id]['rank'] = remaining[-1]; del remaining[-1]
-    else:
-        s['players'][entity_id]['rank'] = remaining[0];  del remaining[0]
-    s['log'].append(f'{name} fertig → {s["players"][entity_id]["rank"]}!')
-    if len(remaining) == 1:
-        last = next((e for e in trickOrder if s['players'][e]['rank'] is None), None)
-        if last is not None:
-            s['players'][last]['rank'] = remaining[0]; del remaining[0]
-            s['log'].append(f'{s["players"][last]["name"]} letzter → {s["players"][last]["rank"]}!')
-    if entity_id in trickOrder:     trickOrder.remove(entity_id)
-    if entity_id in s.get('nextTrickOrder',[]): s['nextTrickOrder'].remove(entity_id)
-    if not remaining or len(trickOrder) <= 1:
-        s['finished'] = True
-        s['log'].append('🎉 Runde beendet!')
-        g['status'] = 'trading'
-        return True
-    return False
+def autoBotTrade(players, trades):
+    """Führt alle offenen Bot-Aktionen im Trading aus."""
+    did_something = False
+    for t in trades:
+        top_id = t["top_id"]
+        bot_id = t["bot_id"]
+        if not t["wish_done"] and players[top_id].get("isBot"):
+            all_ranks = ["A","K","Q","J","T","9","8","7","6","5","4","3","2"]
+            owned = {getRank(c) for c in players[top_id]["hand"]}
+            t["wish_rank"] = next((r for r in all_ranks if r not in owned),
+                                  random.choice(all_ranks))
+            t["wish_done"] = True
+            did_something = True
+        if t["wish_done"] and not t["give_done"] and players[bot_id].get("isBot"):
+            resolveGive(players, t)
+            t["give_done"] = True
+            did_something = True
+        if t["give_done"] and not t["return_done"] and players[top_id].get("isBot"):
+            hand = sortHand(players[top_id]["hand"])
+            resolveReturn(players, t, hand[:t["count"]])
+            t["return_done"] = True
+            did_something = True
+    return did_something
 
-# ── Move log helper ───────────────────────────────────────────────────────────
+# ── Move-Log-Helfer ───────────────────────────────────────────────────────────
 
 def _appendMoveLog(s, entity_id, name, move, auto=False):
     entry = {
@@ -272,19 +214,6 @@ def _appendMoveLog(s, entity_id, name, move, auto=False):
         "name":  name,
         "move":  move,
     }
-    if auto: entry["auto"] = True
+    if auto:
+        entry["auto"] = True
     s.setdefault('moveLog', []).append(entry)
-
-# ── Console helpers ───────────────────────────────────────────────────────────
-
-def projectConsole(players, citizenStack, stack, discardStack):
-    print(players)
-    print("C-Stack:", citizenStack)
-    print("Pile:", stack)
-    print("Discarded:", discardStack)
-
-def printSeparator():
-    print("-"*60)
-
-def randomMoveFromList(lst):
-    return lst[random.randrange(len(lst))] if lst else 'pass'
