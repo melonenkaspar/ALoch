@@ -28,10 +28,12 @@ from SimulatorConfig import (
     MAX_BOT_DELAY_MS, STATE_FILE, gameEntities, gameRanks, rankOrder,
 )
 from SimulatorFunctions import (
-    allTradesDone, appendMoveLog, autoBotTrade, buildTrades, createDeck,
-    createEntities, dealHands, getRank, onlyPassAvailable, pendingGiveFor,
+    allTradesDone, appendMoveLog, autoBotCitizenSwap, autoBotTrade,
+    buildCitizenSwap, buildTrades, createDeck, createEntities, dealHands,
+    getRank, onlyPassAvailable, pendingCitizenSwap, pendingGiveFor,
     pendingReturnFor, pendingWishFor, play, possibleMoves, randomMove,
-    requiredWishCards, resolveReturn, shuffleDeck, sortHand,
+    requiredWishCards, resolveCitizenSwap, resolveReturn, shuffleDeck,
+    skipCitizenSwap, sortHand,
 )
 
 app = Flask(__name__)
@@ -156,6 +158,12 @@ def ensure_host(g: dict) -> None:
 
 def bot_delay_ms(g: dict) -> int:
     return int(g.get('settings', {}).get('botDelayMs', DEFAULT_BOT_DELAY_MS))
+
+
+def only_bots_left(g: dict) -> bool:
+    """Solange kein Mensch mehr am Tisch sitzt, ruht das Spiel – niemand soll
+    unbeobachtet weiterspielen, nur damit Bots gegeneinander Karten legen."""
+    return g['status'] in ('playing', 'trading') and not humans(g)
 
 
 def vacate(g: dict, slot: int, reason: str) -> None:
@@ -304,6 +312,9 @@ def _settle(gid: str, g: dict) -> None:
         if g['status'] != 'playing' or g['state']['finished'] or not g['state']['trickOrder']:
             g.pop('pendingBotMove', None)
             return
+        if only_bots_left(g):          # (2) niemand da ⇒ Spiel ruht
+            g.pop('pendingBotMove', None)
+            return
         s = g['state']
         cur = s['currentTurn']
         if cur not in s['trickOrder']:
@@ -333,6 +344,8 @@ def _tick_bots(gid: str, g: dict) -> None:
     if not pending or time.time() < pending['ready_at']:
         return
     g.pop('pendingBotMove', None)
+    if only_bots_left(g):              # (2) niemand da ⇒ Spiel ruht
+        return
     s, eid = g['state'], pending['eid']
     if (g['status'] == 'playing' and not s['finished']
             and s['currentTurn'] == eid and s['players'][eid].get('isBot')):
@@ -377,6 +390,7 @@ def _init_round(gid: str, g: dict, round_number: int) -> None:
         'trickCounter':   0,
         'moveLog':        [],
         'trades':         [],
+        'citizenSwap':    None,
         'prevRanks':      prev_ranks,
         'lastBotMove':    None,
         'botMoveSeq':     0,
@@ -386,8 +400,9 @@ def _init_round(gid: str, g: dict, round_number: int) -> None:
     if prev_ranks:
         for p in players:
             p['rank'] = prev_ranks.get(str(p['entityID']))
-        g['state']['trades'] = buildTrades(players)
-        g['state']['log']    = [f'Runde {round_number} – Trading läuft!']
+        g['state']['trades']      = buildTrades(players)
+        g['state']['citizenSwap'] = buildCitizenSwap(players, citizenDeck)
+        g['state']['log']         = [f'Runde {round_number} – Trading läuft!']
         for p in players:
             p['rank'] = None
         g['status'] = 'trading'
@@ -398,6 +413,8 @@ def _init_round(gid: str, g: dict, round_number: int) -> None:
 
 
 def _run_bot_trades(gid: str, g: dict) -> None:
+    if only_bots_left(g):              # (2) niemand da ⇒ Spiel ruht
+        return
     s = g['state']
     autoBotTrade(s['players'], s['trades'])
     for t in s['trades']:
@@ -408,7 +425,13 @@ def _run_bot_trades(gid: str, g: dict) -> None:
             if t[flag] and not t.get('_logged_' + flag):
                 s['log'].append(msg)
                 t['_logged_' + flag] = True
-    if allTradesDone(s['trades']):
+
+    swap = s.get('citizenSwap')
+    if autoBotCitizenSwap(s['players'], s['citizenDeck'], swap) and swap:
+        name = s['players'][swap['citizen_id']]['name']
+        s['log'].append(f'{name} tauscht 2 Karten mit dem Citizen-Stack.')
+
+    if allTradesDone(s['trades'], swap):
         _finalize_trading(gid, g)
 
 
@@ -430,8 +453,8 @@ def _finalize_trading(gid: str, g: dict) -> None:
 
 
 def _trade_partner(s: dict, trade: Optional[dict], action: Optional[str]) -> Optional[dict]:
-    if not trade or not action:
-        return None
+    if not trade or action not in ('wish', 'give', 'return'):
+        return None   # citizen_swap tauscht mit dem Stapel, nicht mit einem Spieler
     pid = trade['bot_id'] if action in ('wish', 'return') else trade['top_id']
     return {'name': s['players'][pid]['name'], 'entityID': pid}
 
@@ -911,6 +934,10 @@ def get_state(gid):
             if found:
                 my_trade, trade_action = found, action
                 break
+        if my_trade is None:
+            citizen = pendingCitizenSwap(s.get('citizenSwap'), seat)
+            if citizen:
+                my_trade, trade_action = citizen, 'citizen_swap'
 
     return jsonify({
         'status':         g['status'],
@@ -1062,7 +1089,42 @@ def submit_return(gid):
     trade.update(return_done=True, _logged_return_done=True)
     s['log'].append(f'{s["players"][seat]["name"]} gibt {len(cards)} Karte(n) '
                     f'an {s["players"][trade["bot_id"]]["name"]} zurück.')
-    if allTradesDone(s['trades']):
+    if allTradesDone(s['trades'], s.get('citizenSwap')):
+        _finalize_trading(gid.upper(), g)
+    touch(g)
+    return jsonify({'ok': True})
+
+
+@app.route('/api/game/<gid>/trade/citizen_swap', methods=['POST'])
+def submit_citizen_swap(gid):
+    """Citizen tauscht 2 Handkarten gegen 2 zufällige Karten aus dem Citizen-Stack (optional)."""
+    data = request.json or {}
+    g = get_game(gid)
+    if not g:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    if g['status'] != 'trading':
+        return jsonify({'error': 'Nicht in Trading-Phase'}), 400
+    seat = seat_of(g, data.get('player_id'))
+    if seat is None:
+        return jsonify({'error': 'Unbekannter Spieler'}), 403
+
+    s = g['state']
+    swap = pendingCitizenSwap(s.get('citizenSwap'), seat)
+    if not swap:
+        return jsonify({'error': 'Kein Tausch für dich verfügbar'}), 400
+
+    if data.get('skip'):
+        skipCitizenSwap(swap)
+        s['log'].append(f'{s["players"][seat]["name"]} verzichtet auf den Citizen-Tausch.')
+    else:
+        cards = data.get('cards') or []
+        bad = _check_cards(s['players'][seat]['hand'], cards, swap['count'])
+        if bad:
+            return bad
+        resolveCitizenSwap(s['players'], s['citizenDeck'], swap, cards)
+        s['log'].append(f'{s["players"][seat]["name"]} tauscht {len(cards)} Karte(n) mit dem Citizen-Stack.')
+
+    if allTradesDone(s['trades'], swap):
         _finalize_trading(gid.upper(), g)
     touch(g)
     return jsonify({'ok': True})
