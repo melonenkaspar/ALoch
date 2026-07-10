@@ -186,8 +186,65 @@ def pendingTradeFor(trades: list, entity_id: int) -> Optional[dict]:
             or pendingReturnFor(trades, entity_id))
 
 
-def allTradesDone(trades: list) -> bool:
-    return all(t["return_done"] for t in trades)
+def allTradesDone(trades: list, citizen_swap: Optional[dict] = None) -> bool:
+    return (all(t["return_done"] for t in trades)
+            and (citizen_swap is None or citizen_swap["done"]))
+
+
+CITIZEN_SWAP_COUNT = 2
+
+
+def buildCitizenSwap(players: list, citizenDeck: list) -> Optional[dict]:
+    """
+    Der Citizen darf (muss nicht) 2 eigene Karten gegen 2 zufällige Karten
+    aus dem Citizen-Stack tauschen. Gibt None zurück, wenn es keinen Citizen
+    gibt oder der Stack zu klein für einen Tausch ist.
+    """
+    rank_to_id = {p["rank"]: p["entityID"] for p in players if p["rank"]}
+    cid = rank_to_id.get("Citizen")
+    if cid is None:
+        return None
+    swap = {"citizen_id": cid, "count": CITIZEN_SWAP_COUNT, "done": False, "swapped": False}
+    if len(citizenDeck) < CITIZEN_SWAP_COUNT:
+        swap["done"] = True   # zu wenige Karten im Stack – automatisch übersprungen
+    return swap
+
+
+def pendingCitizenSwap(swap: Optional[dict], entity_id: int) -> Optional[dict]:
+    if swap and swap["citizen_id"] == entity_id and not swap["done"]:
+        return swap
+    return None
+
+
+def resolveCitizenSwap(players: list, citizenDeck: list, swap: dict, cards: list) -> list:
+    """Tauscht `cards` aus der Citizen-Hand gegen zufällige Karten aus dem Stack."""
+    hand = players[swap["citizen_id"]]["hand"]
+    for c in cards:
+        hand.remove(c)
+    citizenDeck.extend(cards)
+    random.shuffle(citizenDeck)
+    drawn = [citizenDeck.pop() for _ in range(len(cards))]
+    hand.extend(drawn)
+    players[swap["citizen_id"]]["hand"] = sortHand(hand)
+    swap["done"] = True
+    swap["swapped"] = True
+    return drawn
+
+
+def skipCitizenSwap(swap: dict) -> None:
+    swap["done"] = True
+    swap["swapped"] = False
+
+
+def autoBotCitizenSwap(players: list, citizenDeck: list, swap: Optional[dict]) -> bool:
+    """Bot-Heuristik: seine 2 schwächsten Karten gegen den Stack tauschen."""
+    if not swap or swap["done"]:
+        return False
+    if not players[swap["citizen_id"]].get("isBot"):
+        return False
+    worst = sortHand(players[swap["citizen_id"]]["hand"])[:swap["count"]]
+    resolveCitizenSwap(players, citizenDeck, swap, worst)
+    return True
 
 
 def autoBotTrade(players: list, trades: list) -> bool:
